@@ -1,0 +1,7 @@
+{
+  "languageVersion": "5.3",
+  "plugins": {
+    "formatter": true,
+    "linter": true
+  }
+}
