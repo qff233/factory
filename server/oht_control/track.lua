@@ -1,6 +1,6 @@
 local M = {}
 
-local queue = require("queue")
+local queue = require("container.queue")
 
 ---@alias NodeType "station"|"machine"
 
@@ -107,6 +107,31 @@ function OHTTrackGraph:add_edge(edge_id, weight)
     table.insert(self.adjacency_list[from_node_id], edge)
 end
 
+---@alias NodeConfig [string, [number, number, number], NodeType]
+---@alias EdgeConfig [string, number]
+
+---comment
+---@param track_config {nodes: NodeConfig[], edges: EdgeConfig[]}
+function OHTTrackGraph:load_config(track_config)
+    local nodes = track_config.nodes
+    local edges = track_config.edges
+
+    for _, node in ipairs(nodes) do
+        local node_id = node[1]
+        local x, y, z = table.unpack(node[2])
+        local type = node[3]
+
+        self:add_node(node_id, { x = x, y = y, z = z }, type)
+    end
+
+    for _, edge in ipairs(edges) do
+        local edge_id = edge[1]
+        local weight = edge[2]
+
+        self:add_edge(edge_id, weight)
+    end
+end
+
 ---comment
 ---@param node_id string
 ---@return OHTEdge[]
@@ -183,6 +208,10 @@ function OHTTrackGraph:find_shortest_path(start_node_id, end_node_id)
                 node = came_from[node]
             end
 
+            -- for key, value in pairs(g_score) do
+            --     print(key, value)
+            -- end
+
             return path
         end
 
@@ -208,6 +237,7 @@ function OHTTrackGraph:find_shortest_path(start_node_id, end_node_id)
             came_from[neighbor_id] = current_id
             g_score[neighbor_id] = tentative_g_score
             local f_score = g_score[neighbor_id] + heuristic_distance(self.nodes[neighbor_id], goal_node)
+
             if not open_set:contains(neighbor_id) then
                 open_set:push(neighbor_id, f_score)
             end
