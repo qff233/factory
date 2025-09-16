@@ -49,9 +49,14 @@ end
 ---@param side Sides
 ---@param count number | nil
 function Robot:drop(slot, side, count)
-    print("select slot is " .. slot)
-    print("side is " .. side)
-    print("count is " .. count)
+    print("select " .. slot, " drop " .. sides_to_string(side) .. " " .. count)
+end
+
+---comment
+---@param side Sides
+---@param count number | nil
+function Robot:suck(side, count)
+    print("suck", sides_to_string(side), count)
 end
 
 ---comment
@@ -59,13 +64,22 @@ end
 ---@param side Sides
 ---@param count number | nil
 function Robot:fill(slot, side, count)
-    print("select slot is " .. slot)
-    print("side is " .. side)
-    print("count is " .. count)
+    print("select " .. slot, " fill " .. sides_to_string(side) .. " " .. count)
 end
+
+---comment
+---@param side Sides
+---@param count number | nil
+function Robot:drain(side, count)
+    print("drain", sides_to_string(side), count)
+end
+
+--------------------------------------------------------------------
 
 function os.sleep(secounds)
     print("sleep " .. secounds .. "secounds")
 end
+
+--------------------------------------------------------------------
 
 return M

@@ -72,7 +72,37 @@ function OHT:move(pos)
     self.pos = pos
 end
 
----todo drop fill
+---comment
+---@param side Sides
+function OHT:drop(side)
+    for i = 1, 16 do
+        self.robot:drop(i, side)
+    end
+end
+
+---comment
+---@param side Sides
+function OHT:suck(side)
+    for _ = 1, 16 do
+        self.robot:suck(side)
+    end
+end
+
+---comment
+---@param side Sides
+function OHT:fill(side)
+    for i = 1, 16 do
+        self.robot:drop(i, side)
+    end
+end
+
+---comment
+---@param side Sides
+function OHT:drain(side)
+    for _ = 1, 16 do
+        self.robot:drain(side)
+    end
+end
 
 function M.new()
     local self = OHT.new()
