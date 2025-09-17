@@ -1,5 +1,8 @@
 {
   "languageVersion": "5.3",
+  "workspace.library": [
+    "./"
+  ],
   "plugins": {
     "formatter": true,
     "linter": true
