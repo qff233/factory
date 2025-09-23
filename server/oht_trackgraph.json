@@ -1,0 +1,21 @@
+{
+  "nodes": {
+    "A": "0.0 0.0 0.0 station",
+    "B": "0.0 3.0 0.0 machine",
+    "C": "6.5 5.5 0.0 machine",
+    "D": "3.0 0.0 7.0 machine",
+    "E": "18.0 0.0 0.0 machine",
+    "F": "17.0 5.0 0.0 machine"
+  },
+  "edges": [
+    "A-B",
+    "A-D",
+    "B-C",
+    "C-D",
+    "C-E",
+    "C-F",
+    "D-C",
+    "D-E",
+    "E-F"
+  ]
+}

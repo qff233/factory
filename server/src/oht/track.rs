@@ -1,6 +1,7 @@
 use super::queue::PriorityQueue;
 use std::{
     collections::{HashMap, HashSet, LinkedList},
+    fs::File,
     rc::Rc,
 };
 
@@ -56,6 +57,14 @@ enum FindPathError {
 }
 
 impl TrackGraph {
+    fn new() -> Self {
+        Self {
+            nodes: HashMap::new(),
+            edges: Vec::new(),
+            adjacency_edge: HashMap::new(),
+        }
+    }
+
     fn add_node(&mut self, node: Node) {
         let node_name = node.name.clone();
         if let Some(_) = self.nodes.insert(node_name.clone(), Rc::new(node)) {
@@ -151,12 +160,80 @@ pub(crate) struct TrackGraphBuilder {
 impl TrackGraphBuilder {
     pub(crate) fn new() -> TrackGraphBuilder {
         Self {
-            track_graph: TrackGraph {
-                nodes: HashMap::new(),
-                edges: Vec::new(),
-                adjacency_edge: HashMap::new(),
-            },
+            track_graph: TrackGraph::new(),
         }
+    }
+
+    pub(crate) fn from_json(file_path: &str) -> Self {
+        let file = File::open(file_path).expect("can not open oht_track json file");
+        let json: serde_json::Value = serde_json::from_reader(file).expect("can not parse json");
+
+        let mut track_graph = TrackGraph::new();
+
+        let nodes = json
+            .get("nodes")
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .iter()
+            .for_each(|(name, value)| {
+                let value = value.as_str().unwrap().to_string();
+                let value_split: Vec<&str> = value.split(' ').collect();
+                let x: f64 = value_split
+                    .get(0)
+                    .expect("can not get X string")
+                    .parse()
+                    .expect("can not parse X");
+                let y: f64 = value_split
+                    .get(1)
+                    .expect("can not get Y string")
+                    .parse()
+                    .expect("can not parse Y");
+                let z: f64 = value_split
+                    .get(2)
+                    .expect("can not get Z string")
+                    .parse()
+                    .expect("can not parse Z");
+                let node_type = {
+                    let node_type = value_split.get(3).expect("can not get node type");
+                    if *node_type == "station" {
+                        NodeType::Station
+                    } else {
+                        NodeType::Machine
+                    }
+                };
+                track_graph.add_node(Node {
+                    name: name.clone(),
+                    position: (x, y, z),
+                    node_type,
+                });
+            });
+        let edges = json
+            .get("edges")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .for_each(|(value)| {
+                let value = value.as_str().unwrap().to_string();
+                let value_split: Vec<&str> = value.split('-').collect();
+                let from_node_name = value_split.get(0).expect("can not get from_node_name");
+                let to_node_name = value_split.get(1).expect("can not get to_node_name");
+
+                let from_node = track_graph.nodes.get(*from_node_name).unwrap();
+                let to_node = track_graph.nodes.get(*to_node_name).unwrap();
+                let weight = heuristic_distance(from_node, to_node);
+
+                let edge = Edge {
+                    from_node: track_graph.nodes.get(*from_node_name).unwrap().clone(),
+                    to_node: track_graph.nodes.get(*to_node_name).unwrap().clone(),
+                    weight,
+                    state: EdgeState::UnLock,
+                };
+                track_graph.add_edge(edge);
+            });
+
+        Self { track_graph }
     }
 
     pub(crate) fn node(
@@ -180,8 +257,8 @@ impl TrackGraphBuilder {
         let weight = heuristic_distance(from_node, to_node);
 
         let edge = Edge {
-            from_node: self.track_graph.nodes.get(from_node_name).unwrap().clone(),
-            to_node: self.track_graph.nodes.get(to_node_name).unwrap().clone(),
+            from_node: from_node.clone(),
+            to_node: to_node.clone(),
             weight,
             state: EdgeState::UnLock,
         };
@@ -240,6 +317,17 @@ mod test {
             .edge("E", "F")
             .build();
 
+        let mut path: Vec<String> = Vec::new();
+        let result = track_graph.find_shortest_path("A", "F").unwrap();
+        for node in result {
+            path.push(node.name.clone());
+        }
+        assert_eq!(path, ["A", "B", "C", "F"]);
+    }
+
+    #[test]
+    fn load_json() {
+        let track_graph = TrackGraphBuilder::from_json("./tests/oht_trackgraph.json").build();
         let mut path: Vec<String> = Vec::new();
         let result = track_graph.find_shortest_path("A", "F").unwrap();
         for node in result {
