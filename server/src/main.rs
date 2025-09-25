@@ -1,9 +1,5 @@
-use axum::{
-    Router,
-    http::{HeaderValue, Method},
-};
+use jsonrpsee::{RpcModule, server::Server};
 use sqlx::postgres::PgPoolOptions;
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, prelude::*};
 
@@ -36,27 +32,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     info!("Connecting to database: {}", database_url);
-    let pool = PgPoolOptions::new()
+    let _pool = PgPoolOptions::new()
         .max_connections(5)
         .connect(&database_url)
         .await
         .expect("Failed to create pool");
     info!("Database pool created successfully");
 
-    let cors_layer = CorsLayer::new()
-        .allow_origin("*".parse::<HeaderValue>().unwrap())
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers([axum::http::header::CONTENT_TYPE]);
-    let trace_layer = TraceLayer::new_for_http();
-    let app = Router::new()
-        // .route("/sql", post(handle_sql_request))
-        .layer(trace_layer)
-        .layer(cors_layer)
-        .with_state(pool);
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:5000").await.unwrap();
-
-    axum::serve(listener, app).await.unwrap();
+    let server = Server::builder().build("0.0.0.0:5000").await?;
+    let module = RpcModule::new(());
+    // module.register_method(, callback)
+    let handle = server.start(module);
+    tokio::spawn(handle.stopped()).await.unwrap();
 
     Ok(())
 }

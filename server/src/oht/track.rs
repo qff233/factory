@@ -1,4 +1,5 @@
 use super::queue::PriorityQueue;
+use core::panic;
 use std::{
     collections::{HashMap, HashSet, LinkedList},
     fs::File,
@@ -6,9 +7,46 @@ use std::{
 };
 
 #[derive(Debug, PartialEq)]
+pub enum Side {
+    NegY,
+    PosY,
+    NegZ,
+    PosZ,
+    NegX,
+    PosX,
+}
+
+impl From<&str> for Side {
+    fn from(value: &str) -> Self {
+        match value {
+            "negy" => Self::NegY,
+            "posy" => Self::PosY,
+            "negz" => Self::NegZ,
+            "posz" => Self::PosZ,
+            "negx" => Self::NegX,
+            "posx" => Self::PosX,
+            _ => panic!("no such side, {}", value),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 enum NodeType {
-    Station,
-    Machine,
+    Stocker,
+    Machine(Side),
+}
+
+impl From<Vec<&str>> for NodeType {
+    fn from(value: Vec<&str>) -> Self {
+        match *value.get(0).expect("can not get node_type") {
+            "stocker" => Self::Stocker,
+            "machine" => {
+                let side = *value.get(1).expect("can not get machine side");
+                Self::Machine(side.into())
+            }
+            _ => panic!("no such node_type, {:?}", value),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -170,7 +208,7 @@ impl TrackGraphBuilder {
 
         let mut track_graph = TrackGraph::new();
 
-        let nodes = json
+        let _add_nodes = json
             .get("nodes")
             .unwrap()
             .as_object()
@@ -178,7 +216,7 @@ impl TrackGraphBuilder {
             .iter()
             .for_each(|(name, value)| {
                 let value = value.as_str().unwrap().to_string();
-                let value_split: Vec<&str> = value.split(' ').collect();
+                let mut value_split: Vec<&str> = value.split(' ').collect();
                 let x: f64 = value_split
                     .get(0)
                     .expect("can not get X string")
@@ -194,27 +232,21 @@ impl TrackGraphBuilder {
                     .expect("can not get Z string")
                     .parse()
                     .expect("can not parse Z");
-                let node_type = {
-                    let node_type = value_split.get(3).expect("can not get node type");
-                    if *node_type == "station" {
-                        NodeType::Station
-                    } else {
-                        NodeType::Machine
-                    }
-                };
+                let node_type = value_split.split_off(3);
+                let node_type = node_type.into();
                 track_graph.add_node(Node {
                     name: name.clone(),
                     position: (x, y, z),
                     node_type,
                 });
             });
-        let edges = json
+        let _add_edges = json
             .get("edges")
             .unwrap()
             .as_array()
             .unwrap()
             .iter()
-            .for_each(|(value)| {
+            .for_each(|value| {
                 let value = value.as_str().unwrap().to_string();
                 let value_split: Vec<&str> = value.split('-').collect();
                 let from_node_name = value_split.get(0).expect("can not get from_node_name");
@@ -279,8 +311,8 @@ mod test {
     #[test]
     fn add_node_edge() {
         let track_graph = TrackGraphBuilder::new()
-            .node("A", (0.0, 1.0, 2.0), NodeType::Station)
-            .node("B", (2.0, 4.0, 6.0), NodeType::Machine)
+            .node("A", (0.0, 1.0, 2.0), NodeType::Stocker)
+            .node("B", (2.0, 4.0, 6.0), NodeType::Stocker)
             .edge("A", "B")
             .build();
 
@@ -290,7 +322,7 @@ mod test {
         assert_eq!(x, 2.0);
         assert_eq!(y, 4.0);
         assert_eq!(z, 6.0);
-        assert_eq!(node_b.node_type, NodeType::Machine);
+        assert_eq!(node_b.node_type, NodeType::Stocker);
 
         let edge = track_graph.adjacency_edge.get("A").unwrap().get(0).unwrap();
         assert_eq!(edge.from_node.name, "A");
@@ -300,12 +332,12 @@ mod test {
     #[test]
     fn a_star() {
         let track_graph = TrackGraphBuilder::new()
-            .node("A", (0.0, 0.0, 0.0), NodeType::Station)
-            .node("B", (0.0, 3.0, 0.0), NodeType::Machine)
-            .node("C", (6.5, 5.5, 0.0), NodeType::Machine)
-            .node("D", (3.0, 0.0, 7.0), NodeType::Machine)
-            .node("E", (18.0, 0.0, 0.0), NodeType::Machine)
-            .node("F", (17.0, 5.0, 0.0), NodeType::Machine)
+            .node("A", (0.0, 0.0, 0.0), NodeType::Stocker)
+            .node("B", (0.0, 3.0, 0.0), NodeType::Machine(Side::NegY))
+            .node("C", (6.5, 5.5, 0.0), NodeType::Machine(Side::NegY))
+            .node("D", (3.0, 0.0, 7.0), NodeType::Machine(Side::NegY))
+            .node("E", (18.0, 0.0, 0.0), NodeType::Machine(Side::NegY))
+            .node("F", (17.0, 5.0, 0.0), NodeType::Machine(Side::NegY))
             .edge("A", "B")
             .edge("A", "D")
             .edge("B", "C")
