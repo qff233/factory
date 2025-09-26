@@ -7,6 +7,18 @@ mod vehicle;
 #[derive(Debug, PartialEq)]
 pub(crate) struct Position(f64, f64, f64);
 
+impl From<&Position> for (f64, f64, f64) {
+    fn from(value: &Position) -> Self {
+        (value.0, value.1, value.2)
+    }
+}
+
+impl From<(f64, f64, f64)> for Position {
+    fn from(value: (f64, f64, f64)) -> Self {
+        Self(value.0, value.1, value.2)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Side {
     NegY,

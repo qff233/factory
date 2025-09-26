@@ -1,11 +1,11 @@
 {
   "nodes": {
-    "A": "0.0 0.0 0.0 stocker",
-    "B": "0.0 3.0 0.0 machine posx ",
-    "C": "6.5 5.5 0.0 machine posx ",
-    "D": "3.0 0.0 7.0 machine posx ",
-    "E": "18.0 0.0 0.0 machine posx ",
-    "F": "17.0 5.0 0.0 machine posx "
+    "A": "0.0 0.0 0.0 stocker posx",
+    "B": "0.0 3.0 0.0 machine posx",
+    "C": "6.5 5.5 0.0 machine posx",
+    "D": "3.0 0.0 7.0 machine posx",
+    "E": "18.0 0.0 0.0 machine posx",
+    "F": "17.0 5.0 0.0 machine posx"
   },
   "edges": [
     "A-B",
