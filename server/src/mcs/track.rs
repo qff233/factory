@@ -1,34 +1,10 @@
-use super::queue::PriorityQueue;
+use super::{Side, queue::PriorityQueue};
 use core::panic;
 use std::{
     collections::{HashMap, HashSet, LinkedList},
     fs::File,
     rc::Rc,
 };
-
-#[derive(Debug, PartialEq)]
-pub enum Side {
-    NegY,
-    PosY,
-    NegZ,
-    PosZ,
-    NegX,
-    PosX,
-}
-
-impl From<&str> for Side {
-    fn from(value: &str) -> Self {
-        match value {
-            "negy" => Self::NegY,
-            "posy" => Self::PosY,
-            "negz" => Self::NegZ,
-            "posz" => Self::PosZ,
-            "negx" => Self::NegX,
-            "posx" => Self::PosX,
-            _ => panic!("no such side, {}", value),
-        }
-    }
-}
 
 #[derive(Debug, PartialEq)]
 enum NodeType {
@@ -123,7 +99,7 @@ impl TrackGraph {
         self.edges.push(edge);
     }
 
-    pub(crate) fn find_shortest_path(
+    pub fn find_shortest_path(
         self,
         begin_node_name: &str,
         end_node_name: &str,
