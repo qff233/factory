@@ -51,17 +51,6 @@ impl Node {
 
 pub type Path = Vec<Rc<Node>>;
 
-fn heuristic_distance(from_position: &Position, to_position: &Position) -> f64 {
-    let (x1, y1, z1) = from_position.into();
-    let (x2, y2, z2) = to_position.into();
-
-    let dx = x1 - x2;
-    let dy = y1 - y2;
-    let dz = z1 - z2;
-
-    f64::sqrt(dx * dx + dy * dy + dz * dz)
-}
-
 #[derive(Debug)]
 enum EdgeState {
     Lock,
@@ -87,6 +76,20 @@ pub enum FindError {
     NotFindNode,
     NotFindAnyPath,
     NotFindAnyNode,
+}
+
+fn heuristic_distance(from_position: &Position, to_position: &Position) -> f64 {
+    let (x1, y1, z1) = from_position.into();
+    let (x2, y2, z2) = to_position.into();
+
+    // Euclidean Distance
+    // let dx = x1 - x2;
+    // let dy = y1 - y2;
+    // let dz = z1 - z2;
+    // f64::sqrt(dx * dx + dy * dy + dz * dz)
+
+    // Manhattan Distance
+    (x1 - x2).abs() + (y1 - y2).abs() + (z1 - z2).abs()
 }
 
 impl TrackGraph {
@@ -131,7 +134,22 @@ impl TrackGraph {
             .for_each(|edge| *edge.state.borrow_mut() = EdgeState::UnLock);
     }
 
-    pub fn find_path(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path, FindError> {
+    pub fn get_lock_node(&self) -> HashSet<String> {
+        let mut result: HashSet<String> = HashSet::new();
+        self.edges
+            .iter()
+            .flat_map(|(_, edges)| edges.iter())
+            .filter(|edge| match *edge.state.borrow() {
+                EdgeState::Lock => true,
+                EdgeState::UnLock => false,
+            })
+            .for_each(|edge| {
+                result.insert(edge.to_node.name.to_string());
+            });
+        result
+    }
+
+    fn a_star(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path, FindError> {
         let mut open_node: PriorityQueue<Rc<Node>> = PriorityQueue::new();
         let mut close_node: HashSet<String> = HashSet::new();
         let mut came_from: HashMap<String, Rc<Node>> = HashMap::new();
@@ -198,6 +216,67 @@ impl TrackGraph {
         Err(FindError::NotFindAnyPath)
     }
 
+    fn dijkstra(&self, begin_node_name: &str, node_type: &NodeType) -> Result<Path, FindError> {
+        let mut open_node: PriorityQueue<Rc<Node>> = PriorityQueue::new();
+        let mut close_node: HashSet<String> = HashSet::new();
+        let mut came_from: HashMap<String, Rc<Node>> = HashMap::new();
+        let mut g_score: HashMap<String, f64> = HashMap::new();
+        for (name, _) in self.nodes.iter() {
+            g_score.insert(name.clone(), f64::MAX);
+        }
+        g_score.insert(begin_node_name.to_string(), 0.0);
+
+        let begin_node = self
+            .nodes
+            .get(begin_node_name)
+            .ok_or(FindError::NotFindNode)?;
+
+        open_node.push(0.0, begin_node.clone());
+
+        while let Some(current_node) = open_node.pop() {
+            if current_node.node_type == *node_type {
+                let mut result: LinkedList<Rc<Node>> = LinkedList::new();
+                result.push_back(current_node.clone());
+
+                let mut current_node_name = current_node.name.clone();
+                while let Some(prev_node) = came_from.get(current_node_name.as_str()) {
+                    current_node_name = prev_node.name.clone();
+                    result.push_front(prev_node.clone());
+                }
+                return Ok(result.into_iter().collect());
+            }
+
+            close_node.insert(current_node.name.clone());
+
+            for edge in self.edges.get(current_node.name()).unwrap() {
+                if let EdgeState::Lock = *edge.state.borrow() {
+                    continue;
+                }
+
+                let to_node = edge.to_node.clone();
+                if close_node.contains(to_node.name.as_str()) {
+                    continue;
+                }
+
+                let tentative_g_score =
+                    g_score.get(current_node.name.as_str()).unwrap() + edge.weight;
+                if tentative_g_score >= *g_score.get(to_node.name.as_str()).unwrap() {
+                    continue;
+                }
+
+                came_from.insert(to_node.name.clone(), current_node.clone());
+                g_score.insert(to_node.name.clone(), tentative_g_score);
+                open_node.push(tentative_g_score, to_node.clone());
+            }
+        }
+
+        Err(FindError::NotFindAnyPath)
+    }
+
+    pub fn find_path(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path, FindError> {
+        self.a_star(begin_node_name, end_node_name)
+    }
+
     pub fn find_shortest_node(&self, position: &Position) -> Result<Rc<Node>, FindError> {
         let mut nodes: Vec<(Rc<Node>, f64)> = Vec::new();
         nodes.reserve(self.nodes.len());
@@ -216,24 +295,7 @@ impl TrackGraph {
         from_node_name: &str,
         node_type: NodeType,
     ) -> Result<Path, FindError> {
-        let from_node = self
-            .nodes
-            .get(from_node_name)
-            .ok_or(FindError::NotFindNode)?;
-        let mut nodes: Vec<(Rc<Node>, f64)> = Vec::new();
-        nodes.reserve(self.nodes.len());
-        self.nodes
-            .iter()
-            .filter(|(_, node)| node.node_type == node_type)
-            .for_each(|(_, to_node)| {
-                nodes.push((
-                    to_node.clone(),
-                    heuristic_distance(from_node.position(), to_node.position()),
-                ));
-            });
-        nodes.sort_by(|a, b| a.1.total_cmp(&b.1));
-        let to_node = nodes.get(0).ok_or(FindError::NotFindAnyNode)?.0.clone();
-        self.find_path(from_node_name, to_node.name())
+        self.dijkstra(from_node_name, &node_type)
     }
 
     pub fn find_parking_path(&self, from_node_name: &str) -> Result<Path, FindError> {
@@ -338,8 +400,16 @@ impl TrackGraphBuilder {
     }
 
     pub fn edge(mut self, from_node_name: &str, to_node_name: &str) -> TrackGraphBuilder {
-        let from_node = self.track_graph.nodes.get(from_node_name).unwrap();
-        let to_node = self.track_graph.nodes.get(to_node_name).unwrap();
+        let from_node = self
+            .track_graph
+            .nodes
+            .get(from_node_name)
+            .expect(format!("No such Node {}, Please check!", from_node_name).as_str());
+        let to_node = self
+            .track_graph
+            .nodes
+            .get(to_node_name)
+            .expect(format!("No such Node {}, Please check!", from_node_name).as_str());
         let weight = heuristic_distance(&from_node.position, &to_node.position);
 
         let edge = Edge {
@@ -391,29 +461,72 @@ mod test {
     #[test]
     fn a_star() {
         let track_graph = TrackGraphBuilder::new()
-            .node("A", (0.0, 0.0, 0.0).into(), NodeType::Stocker(Side::NegY))
-            .node("B", (0.0, 3.0, 0.0).into(), NodeType::Machine(Side::NegY))
-            .node("C", (6.5, 5.5, 0.0).into(), NodeType::Machine(Side::NegY))
-            .node("D", (3.0, 0.0, 7.0).into(), NodeType::Machine(Side::NegY))
-            .node("E", (18.0, 0.0, 0.0).into(), NodeType::Machine(Side::NegY))
-            .node("F", (17.0, 5.0, 0.0).into(), NodeType::Machine(Side::NegY))
-            .edge("A", "B")
-            .edge("A", "D")
-            .edge("B", "C")
-            .edge("C", "D")
-            .edge("C", "E")
-            .edge("C", "F")
-            .edge("D", "C")
-            .edge("D", "E")
-            .edge("E", "F")
+            .node("P2", (0.0, 0.0, 0.0).into(), NodeType::ParkingStation)
+            .node("C1", (1.0, 0.0, 0.0).into(), NodeType::ChargingStation)
+            .node("P1", (2.0, 0.0, 0.0).into(), NodeType::ParkingStation)
+            .node("A1", (2.0, 1.0, 0.0).into(), NodeType::Fork)
+            .node("A2", (1.0, 1.0, 0.0).into(), NodeType::Fork)
+            .node("A3", (1.0, 2.0, 0.0).into(), NodeType::Fork)
+            .node("A4", (2.0, 2.0, 0.0).into(), NodeType::Fork)
+            .node("A5", (0.0, 2.0, 0.0).into(), NodeType::Fork)
+            .node("A6", (0.0, 1.0, 0.0).into(), NodeType::Fork)
+            .edge_double("P2", "A6")
+            .edge_double("C1", "A2")
+            .edge_double("P1", "A1")
+            .edge("A6", "A2")
+            .edge("A2", "A1")
+            .edge("A1", "A4")
+            .edge("A4", "A3")
+            .edge("A3", "A2")
+            .edge("A3", "A5")
+            .edge("A5", "A6")
             .build();
 
         let mut path: Vec<String> = Vec::new();
-        let result = track_graph.find_path("A", "F").unwrap();
+        let result = track_graph.a_star("A4", "P1").unwrap();
         for node in result {
             path.push(node.name.clone());
         }
-        assert_eq!(path, ["A", "B", "C", "F"]);
+        assert_eq!(path, ["A4", "A3", "A2", "A1", "P1"]);
+    }
+
+    #[test]
+    fn find_parking_charging_path() {
+        let track_graph = TrackGraphBuilder::new()
+            .node("P2", (0.0, 0.0, 0.0).into(), NodeType::ParkingStation)
+            .node("C1", (1.0, 0.0, 0.0).into(), NodeType::ChargingStation)
+            .node("P1", (2.0, 0.0, 0.0).into(), NodeType::ParkingStation)
+            .node("A1", (2.0, 1.0, 0.0).into(), NodeType::Fork)
+            .node("A2", (1.0, 1.0, 0.0).into(), NodeType::Fork)
+            .node("A3", (1.0, 2.0, 0.0).into(), NodeType::Fork)
+            .node("A4", (2.0, 2.0, 0.0).into(), NodeType::Fork)
+            .node("A5", (0.0, 2.0, 0.0).into(), NodeType::Fork)
+            .node("A6", (0.0, 1.0, 0.0).into(), NodeType::Fork)
+            .edge_double("P2", "A6")
+            .edge_double("C1", "A2")
+            .edge_double("P1", "A1")
+            .edge("A6", "A2")
+            .edge("A2", "A1")
+            .edge("A1", "A4")
+            .edge("A4", "A3")
+            .edge("A3", "A2")
+            .edge("A3", "A5")
+            .edge("A5", "A6")
+            .build();
+
+        let mut path: Vec<String> = Vec::new();
+        let result = track_graph.find_parking_path("A4").unwrap();
+        for node in result {
+            path.push(node.name.clone());
+        }
+        assert_eq!(path, ["A4", "A3", "A2", "A1", "P1"]);
+
+        let mut path: Vec<String> = Vec::new();
+        let result = track_graph.find_charging_path("A4").unwrap();
+        for node in result {
+            path.push(node.name.clone());
+        }
+        assert_eq!(path, ["A4", "A3", "A2", "C1"]);
     }
 
     #[test]

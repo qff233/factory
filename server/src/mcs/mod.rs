@@ -4,8 +4,16 @@ mod queue;
 mod track;
 mod vehicle;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub(crate) struct Position(f64, f64, f64);
+
+impl PartialEq for Position {
+    fn eq(&self, other: &Self) -> bool {
+        (self.0 - other.0).abs() < 0.1
+            && (self.1 - other.1).abs() < 0.1
+            && (self.2 - other.2).abs() < 0.1
+    }
+}
 
 impl From<&Position> for (f64, f64, f64) {
     fn from(value: &Position) -> Self {
@@ -19,7 +27,7 @@ impl From<(f64, f64, f64)> for Position {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Side {
     NegY,
     PosY,
