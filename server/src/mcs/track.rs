@@ -9,7 +9,9 @@ use std::{
 
 #[derive(Debug, PartialEq)]
 pub enum NodeType {
-    ChargingStation(bool),
+    Fork,
+    ChargingStation,
+    ParkingStation,
     Stocker(Side),
     Machine(Side),
 }
@@ -45,19 +47,9 @@ impl Node {
     pub fn position(&self) -> &Position {
         &self.position
     }
-
-    pub fn lock(&mut self) {
-        if let NodeType::ChargingStation(_) = self.node_type {
-            self.node_type = NodeType::ChargingStation(true);
-        }
-    }
-
-    pub fn unlock(&mut self) {
-        if let NodeType::ChargingStation(_) = self.node_type {
-            self.node_type = NodeType::ChargingStation(true);
-        }
-    }
 }
+
+pub type Path = Vec<Rc<Node>>;
 
 fn heuristic_distance(from_position: &Position, to_position: &Position) -> f64 {
     let (x1, y1, z1) = from_position.into();
@@ -71,17 +63,23 @@ fn heuristic_distance(from_position: &Position, to_position: &Position) -> f64 {
 }
 
 #[derive(Debug)]
+enum EdgeState {
+    Lock,
+    UnLock,
+}
+
+#[derive(Debug)]
 struct Edge {
-    from_node: Rc<RefCell<Node>>,
-    to_node: Rc<RefCell<Node>>,
+    from_node: Rc<Node>,
+    to_node: Rc<Node>,
     weight: f64,
+    state: RefCell<EdgeState>,
 }
 
 #[derive(Debug)]
 pub struct TrackGraph {
-    adjacency_edge: HashMap<String, Vec<Rc<Edge>>>,
-    edges: Vec<Rc<Edge>>,
-    nodes: HashMap<String, Rc<RefCell<Node>>>,
+    edges: HashMap<String, Vec<Rc<Edge>>>,
+    nodes: HashMap<String, Rc<Node>>,
 }
 
 #[derive(Debug)]
@@ -95,42 +93,48 @@ impl TrackGraph {
     fn new() -> Self {
         Self {
             nodes: HashMap::new(),
-            edges: Vec::new(),
-            adjacency_edge: HashMap::new(),
+            edges: HashMap::new(),
         }
     }
 
     fn add_node(&mut self, node: Node) {
         let node_name = node.name.clone();
-        if let Some(_) = self
-            .nodes
-            .insert(node_name.clone(), Rc::new(RefCell::new(node)))
-        {
+        if let Some(_) = self.nodes.insert(node_name.clone(), Rc::new(node)) {
             assert!(false, "Same Node is forbidden")
         }
-        self.adjacency_edge.insert(node_name, Vec::new());
+        self.edges.insert(node_name, Vec::new());
     }
 
     fn add_edge(&mut self, edge: Edge) {
-        let from_node_name = &edge.from_node.borrow().name.clone();
+        let from_node_name = &edge.from_node.name.clone();
 
         let edge = Rc::new(edge);
-        self.adjacency_edge
+        self.edges
             .get_mut(from_node_name)
             .unwrap()
             .push(edge.clone());
-
-        self.edges.push(edge);
     }
 
-    pub fn find_shortest_path(
-        &self,
-        begin_node_name: &str,
-        end_node_name: &str,
-    ) -> Result<Vec<Rc<RefCell<Node>>>, FindError> {
-        let mut open_node: PriorityQueue<Rc<RefCell<Node>>> = PriorityQueue::new();
+    pub fn lock_node(&self, node_name: &str) {
+        self.edges
+            .iter()
+            .flat_map(|(_, edges)| edges.iter())
+            .filter(|edge| edge.to_node.name == node_name)
+            .for_each(|edge| *edge.state.borrow_mut() = EdgeState::Lock);
+    }
+
+    pub fn unlock_node(&self, node_name: &str) {
+        self.edges
+            .iter()
+            .flat_map(|(_, edges)| edges.iter())
+            .filter(|edge| edge.to_node.name == node_name)
+            .for_each(|edge| *edge.state.borrow_mut() = EdgeState::UnLock);
+    }
+
+    pub fn find_path(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path, FindError> {
+        let mut open_node: PriorityQueue<Rc<Node>> = PriorityQueue::new();
         let mut close_node: HashSet<String> = HashSet::new();
-        let mut came_from: HashMap<String, Rc<RefCell<Node>>> = HashMap::new();
+        let mut came_from: HashMap<String, Rc<Node>> = HashMap::new();
         let mut g_score: HashMap<String, f64> = HashMap::new();
         for (name, _) in self.nodes.iter() {
             g_score.insert(name.clone(), f64::MAX);
@@ -147,48 +151,46 @@ impl TrackGraph {
             .ok_or(FindError::NotFindNode)?;
 
         open_node.push(
-            heuristic_distance(begin_node.borrow().position(), end_node.borrow().position()),
+            heuristic_distance(begin_node.position(), end_node.position()),
             begin_node.clone(),
         );
 
         while let Some(current_node) = open_node.pop() {
-            if current_node.borrow().name == end_node_name {
-                let mut result: LinkedList<Rc<RefCell<Node>>> = LinkedList::new();
+            if current_node.name == end_node_name {
+                let mut result: LinkedList<Rc<Node>> = LinkedList::new();
                 result.push_back(current_node.clone());
 
-                let mut current_node_name = current_node.borrow().name.clone();
+                let mut current_node_name = current_node.name.clone();
                 while let Some(prev_node) = came_from.get(current_node_name.as_str()) {
-                    current_node_name = prev_node.borrow().name.clone();
+                    current_node_name = prev_node.name.clone();
                     result.push_front(prev_node.clone());
                 }
                 return Ok(result.into_iter().collect());
             }
 
-            close_node.insert(current_node.borrow().name.clone());
+            close_node.insert(current_node.name.clone());
 
-            let edges = self
-                .adjacency_edge
-                .get(current_node.borrow().name.as_str())
-                .unwrap();
+            let edges = self.edges.get(current_node.name.as_str()).unwrap();
             for edge in edges {
+                if let EdgeState::Lock = *edge.state.borrow() {
+                    continue;
+                }
+
                 let to_node = edge.to_node.clone();
-                if close_node.contains(to_node.borrow().name.as_str()) {
+                if close_node.contains(to_node.name.as_str()) {
                     continue;
                 }
 
                 let tentative_g_score =
-                    g_score.get(current_node.borrow().name.as_str()).unwrap() + edge.weight;
-                if tentative_g_score >= *g_score.get(to_node.borrow().name.as_str()).unwrap() {
+                    g_score.get(current_node.name.as_str()).unwrap() + edge.weight;
+                if tentative_g_score >= *g_score.get(to_node.name.as_str()).unwrap() {
                     continue;
                 }
 
-                came_from.insert(to_node.borrow().name.clone(), current_node.clone());
-                g_score.insert(to_node.borrow().name.clone(), tentative_g_score);
-                let f_score = *g_score.get(&to_node.borrow().name).unwrap()
-                    + heuristic_distance(
-                        current_node.borrow().position(),
-                        end_node.borrow().position(),
-                    );
+                came_from.insert(to_node.name.clone(), current_node.clone());
+                g_score.insert(to_node.name.clone(), tentative_g_score);
+                let f_score = *g_score.get(&to_node.name).unwrap()
+                    + heuristic_distance(current_node.position(), end_node.position());
                 open_node.push(f_score, to_node.clone());
             }
         }
@@ -196,43 +198,50 @@ impl TrackGraph {
         Err(FindError::NotFindAnyPath)
     }
 
-    pub fn find_shortest_node(&self, position: &Position) -> Result<Rc<RefCell<Node>>, FindError> {
-        let mut nodes: Vec<(Rc<RefCell<Node>>, f64)> = Vec::new();
+    pub fn find_shortest_node(&self, position: &Position) -> Result<Rc<Node>, FindError> {
+        let mut nodes: Vec<(Rc<Node>, f64)> = Vec::new();
         nodes.reserve(self.nodes.len());
         self.nodes.iter().for_each(|(_, to_node)| {
             nodes.push((
                 to_node.clone(),
-                heuristic_distance(&position, to_node.borrow().position()),
+                heuristic_distance(&position, to_node.position()),
             ));
         });
         nodes.sort_by(|a, b| a.1.total_cmp(&b.1));
         Ok(nodes.get(0).ok_or(FindError::NotFindAnyNode)?.0.clone())
     }
 
-    pub fn find_shortest_path_by_type(
+    pub fn find_path_by_type(
         &self,
         from_node_name: &str,
         node_type: NodeType,
-    ) -> Result<Vec<Rc<RefCell<Node>>>, FindError> {
+    ) -> Result<Path, FindError> {
         let from_node = self
             .nodes
             .get(from_node_name)
-            .ok_or(FindError::NotFindNode)?
-            .borrow();
-        let mut nodes: Vec<(Rc<RefCell<Node>>, f64)> = Vec::new();
+            .ok_or(FindError::NotFindNode)?;
+        let mut nodes: Vec<(Rc<Node>, f64)> = Vec::new();
         nodes.reserve(self.nodes.len());
         self.nodes
             .iter()
-            .filter(|(_, node)| node.borrow().node_type == node_type)
+            .filter(|(_, node)| node.node_type == node_type)
             .for_each(|(_, to_node)| {
                 nodes.push((
                     to_node.clone(),
-                    heuristic_distance(from_node.position(), to_node.borrow().position()),
+                    heuristic_distance(from_node.position(), to_node.position()),
                 ));
             });
         nodes.sort_by(|a, b| a.1.total_cmp(&b.1));
         let to_node = nodes.get(0).ok_or(FindError::NotFindAnyNode)?.0.clone();
-        self.find_shortest_path(from_node_name, to_node.borrow().name())
+        self.find_path(from_node_name, to_node.name())
+    }
+
+    pub fn find_parking_path(&self, from_node_name: &str) -> Result<Path, FindError> {
+        self.find_path_by_type(from_node_name, NodeType::ParkingStation)
+    }
+
+    pub fn find_charging_path(&self, from_node_name: &str) -> Result<Path, FindError> {
+        self.find_path_by_type(from_node_name, NodeType::ChargingStation)
     }
 }
 
@@ -299,13 +308,13 @@ impl TrackGraphBuilder {
 
                 let from_node = track_graph.nodes.get(*from_node_name).unwrap();
                 let to_node = track_graph.nodes.get(*to_node_name).unwrap();
-                let weight =
-                    heuristic_distance(&from_node.borrow().position, &to_node.borrow().position);
+                let weight = heuristic_distance(&from_node.position, &to_node.position);
 
                 let edge = Edge {
                     from_node: track_graph.nodes.get(*from_node_name).unwrap().clone(),
                     to_node: track_graph.nodes.get(*to_node_name).unwrap().clone(),
                     weight,
+                    state: RefCell::new(EdgeState::UnLock),
                 };
                 track_graph.add_edge(edge);
             });
@@ -313,7 +322,7 @@ impl TrackGraphBuilder {
         Self { track_graph }
     }
 
-    pub(crate) fn node(
+    pub fn node(
         mut self,
         name: &str,
         position: Position,
@@ -328,22 +337,28 @@ impl TrackGraphBuilder {
         self
     }
 
-    pub(crate) fn edge(mut self, from_node_name: &str, to_node_name: &str) -> TrackGraphBuilder {
+    pub fn edge(mut self, from_node_name: &str, to_node_name: &str) -> TrackGraphBuilder {
         let from_node = self.track_graph.nodes.get(from_node_name).unwrap();
         let to_node = self.track_graph.nodes.get(to_node_name).unwrap();
-        let weight = heuristic_distance(&from_node.borrow().position, &to_node.borrow().position);
+        let weight = heuristic_distance(&from_node.position, &to_node.position);
 
         let edge = Edge {
             from_node: from_node.clone(),
             to_node: to_node.clone(),
             weight,
+            state: RefCell::new(EdgeState::UnLock),
         };
 
         self.track_graph.add_edge(edge);
         self
     }
 
-    pub(crate) fn build(self) -> TrackGraph {
+    pub fn edge_double(mut self, node1: &str, node2: &str) -> TrackGraphBuilder {
+        self = self.edge(node1, node2);
+        self.edge(node2, node1)
+    }
+
+    pub fn build(self) -> TrackGraph {
         self.track_graph
     }
 }
@@ -361,16 +376,16 @@ mod test {
             .build();
 
         let node_b = track_graph.nodes.get("B").unwrap();
-        let (x, y, z) = node_b.borrow().position().into();
-        assert_eq!(node_b.borrow().name, "B");
+        let (x, y, z) = node_b.position().into();
+        assert_eq!(node_b.name, "B");
         assert_eq!(x, 2.0);
         assert_eq!(y, 4.0);
         assert_eq!(z, 6.0);
-        assert_eq!(node_b.borrow().node_type, NodeType::Stocker(Side::NegY));
+        assert_eq!(node_b.node_type, NodeType::Stocker(Side::NegY));
 
-        let edge = track_graph.adjacency_edge.get("A").unwrap().get(0).unwrap();
-        assert_eq!(edge.from_node.borrow().name, "A");
-        assert_eq!(edge.to_node.borrow().name, "B");
+        let edge = track_graph.edges.get("A").unwrap().get(0).unwrap();
+        assert_eq!(edge.from_node.name, "A");
+        assert_eq!(edge.to_node.name, "B");
     }
 
     #[test]
@@ -394,9 +409,9 @@ mod test {
             .build();
 
         let mut path: Vec<String> = Vec::new();
-        let result = track_graph.find_shortest_path("A", "F").unwrap();
+        let result = track_graph.find_path("A", "F").unwrap();
         for node in result {
-            path.push(node.borrow().name.clone());
+            path.push(node.name.clone());
         }
         assert_eq!(path, ["A", "B", "C", "F"]);
     }
@@ -405,9 +420,9 @@ mod test {
     fn load_json() {
         let track_graph = TrackGraphBuilder::from_json("./tests/oht_trackgraph.json").build();
         let mut path: Vec<String> = Vec::new();
-        let result = track_graph.find_shortest_path("A", "F").unwrap();
+        let result = track_graph.find_path("A", "F").unwrap();
         for node in result {
-            path.push(node.borrow().name.clone());
+            path.push(node.name.clone());
         }
         assert_eq!(path, ["A", "B", "C", "F"]);
     }
