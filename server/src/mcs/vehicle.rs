@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::collections::LinkedList;
 use std::rc::Rc;
 
@@ -8,14 +7,13 @@ use super::Position;
 use super::Side;
 use super::track::{self, TrackGraph};
 
-#[derive(Debug)]
-enum Command {
-    UseToolIn(String, Side),
-}
-
 #[derive(Debug, Clone)]
-enum Action {
+pub enum Action {
     Move(Rc<track::Node>),
+    Drop(Side),
+    Suck(Side),
+    Drain(Side),
+    Fill(Side),
     Use(Side),
 }
 
@@ -41,22 +39,35 @@ enum State {
 }
 
 #[derive(Debug)]
-struct Vechicle {
+pub enum TransType {
+    Item,
+    Fluid,
+}
+
+#[derive(Debug)]
+pub struct Vechicle {
     id: u32,
+    trans_type: TransType,
     state: State,
     landmark: Option<Rc<track::Node>>,
 }
 
 impl Vechicle {
     fn new(id: u32) -> Self {
+        let trans_type = if id > 2000 {
+            TransType::Fluid
+        } else {
+            TransType::Item
+        };
         Self {
             id,
+            trans_type,
             state: State::Offline,
             landmark: None,
         }
     }
 
-    fn offline(&mut self) {
+    pub fn offline(&mut self) {
         self.state = State::Offline;
     }
 
@@ -97,7 +108,7 @@ impl Vechicle {
                     return Some(actions.front().unwrap().clone());
                 }
             }
-            Action::Use(_side) => return actions.pop_front(),
+            _ => return actions.pop_front(),
         }
     }
 
@@ -169,7 +180,7 @@ impl Vechicle {
         }
     }
 
-    pub fn update(
+    pub fn get_action(
         &mut self,
         current_position: &Position,
         current_battery_level: f32,
@@ -309,7 +320,7 @@ mod tests {
 
         // move to shortest node   action
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "A4");
@@ -320,7 +331,7 @@ mod tests {
         // yet to A4, still action move to A4
         let current_position = (6.0, 0.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "A4");
@@ -334,7 +345,7 @@ mod tests {
         // arrive A4, action move to A3
         let current_position = (2.0, 2.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "A3");
@@ -343,7 +354,7 @@ mod tests {
         // arrive A3, action move to A2
         let current_position = (1.0, 2.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "A2");
@@ -352,7 +363,7 @@ mod tests {
         // arrive A2, action move to A1
         let current_position = (1.0, 1.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "A1");
@@ -361,7 +372,7 @@ mod tests {
         // arrive A1, action move to P1
         let current_position = (2.0, 1.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "P1");
@@ -371,7 +382,7 @@ mod tests {
         let current_position = (2.0, 0.0, 0.0).into();
         assert!(
             vehicle
-                .update(&current_position, 1.0, &track_graph)
+                .get_action(&current_position, 1.0, &track_graph)
                 .is_none()
         );
         if let State::ParkDone = vehicle.state {
@@ -412,7 +423,7 @@ mod tests {
         let current_position = (2.0, 2.0, 0.0).into();
         vehicle.inline(&current_position, &track_graph);
 
-        vehicle.update(&current_position, 0.1, &track_graph);
+        vehicle.get_action(&current_position, 0.1, &track_graph);
         if let State::Charging(_) = vehicle.state {
         } else {
             assert!(false)
@@ -421,7 +432,7 @@ mod tests {
         // arrive A3, action move to A2
         let current_position = (1.0, 2.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 0.2, &track_graph)
+            .get_action(&current_position, 0.2, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "A2");
@@ -430,7 +441,7 @@ mod tests {
         // arrive A2, action move to C1
         let current_position = (1.0, 1.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 0.2, &track_graph)
+            .get_action(&current_position, 0.2, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "C1");
@@ -441,7 +452,7 @@ mod tests {
         // charge over
         let current_position = (1.0, 0.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "A2");
@@ -451,7 +462,7 @@ mod tests {
         // arrive A2, action move to A1
         let current_position = (1.0, 1.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "A1");
@@ -462,7 +473,7 @@ mod tests {
         // arrive A1, action move to P1
         let current_position = (2.0, 1.0, 0.0).into();
         if let Action::Move(node) = vehicle
-            .update(&current_position, 1.0, &track_graph)
+            .get_action(&current_position, 1.0, &track_graph)
             .unwrap()
         {
             assert_eq!(node.name(), "P1");
@@ -471,72 +482,11 @@ mod tests {
 
         // arrive P1
         let current_position = (2.0, 0.0, 0.0).into();
-        vehicle.update(&current_position, 1.0, &track_graph);
+        vehicle.get_action(&current_position, 1.0, &track_graph);
 
         if let State::ParkDone = vehicle.state {
         } else {
             assert!(false)
         }
     }
-}
-
-struct PingPong {
-    time_stamps: HashMap<u32, chrono::DateTime<chrono::Local>>,
-}
-
-impl PingPong {
-    fn new(vechicles: &HashMap<u32, Vechicle>) -> Self {
-        let mut time_stamps = HashMap::new();
-        let now = chrono::Local::now();
-        for (id, _) in vechicles {
-            time_stamps.insert(*id, now);
-        }
-        Self { time_stamps }
-    }
-
-    fn update_timestamp(&mut self, id: u32) {
-        self.time_stamps.insert(id, chrono::Local::now());
-    }
-
-    fn offline_overtime_vechicle(&self, vechicles: &mut HashMap<u32, Vechicle>) {
-        let now = chrono::Local::now();
-        self.time_stamps
-            .iter()
-            .filter(|(_, after)| {
-                let dt = now - *after;
-                dt.num_seconds() > 5
-            })
-            .for_each(|(id, _)| {
-                vechicles.get_mut(id).unwrap().offline();
-            });
-    }
-}
-
-pub struct VechicleManager {
-    vechicles: HashMap<u32, Vechicle>,
-    pingpong: PingPong,
-    track_graph: TrackGraph,
-}
-
-impl VechicleManager {
-    pub fn new(track_graph: TrackGraph) -> Self {
-        let vechicles = HashMap::new();
-        let pingpong = PingPong::new(&vechicles);
-        Self {
-            vechicles,
-            pingpong,
-            track_graph,
-        }
-    }
-
-    pub fn update(&mut self, id: u32, position: &Position, battery_level: f32) -> Option<Action> {
-        self.pingpong.update_timestamp(id);
-        self.vechicles
-            .get_mut(&id)
-            .unwrap()
-            .update(position, battery_level, &self.track_graph)
-        // self.pingpong.offline_overtime_vechicle(&mut self.vechicles);  //TODO  run once every 5 seconds
-    }
-
-    pub fn tasking(&mut self) {}
 }

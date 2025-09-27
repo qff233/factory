@@ -3,6 +3,7 @@ use std::rc::Rc;
 mod queue;
 mod track;
 mod vehicle;
+mod vehicle_dispatch;
 
 #[derive(Debug)]
 pub(crate) struct Position(f64, f64, f64);
