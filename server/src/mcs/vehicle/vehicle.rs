@@ -26,7 +26,81 @@ pub enum Action {
     Use(Side),
 }
 
-type ActionSequence = LinkedList<Action>;
+#[derive(Debug)]
+pub struct ActionSequence(LinkedList<Action>);
+
+impl ActionSequence {
+    pub fn next_action(&self) -> Option<&Action> {
+        self.0.front()
+    }
+
+    pub fn pop_next_action(&mut self) -> Option<Action> {
+        self.0.pop_front()
+    }
+
+    pub fn last_move_node(&self) -> Option<Rc<track::Node>> {
+        for action in self.0.iter().rev() {
+            if let Action::Move(node) = action {
+                return Some(node.clone());
+            }
+        }
+        None
+    }
+}
+
+pub struct ActionSequenceBuilder(LinkedList<Action>);
+
+impl ActionSequenceBuilder {
+    pub fn new() -> Self {
+        Self(LinkedList::new())
+    }
+
+    pub fn move_path(mut self, path: &track::Path) -> Self {
+        for node in path.iter().skip(1) {
+            self.0.push_back(Action::Move(node.clone()));
+        }
+        self
+    }
+
+    pub fn move_to(mut self, node: Rc<track::Node>) -> Self {
+        self.0.push_back(Action::Move(node));
+        self
+    }
+
+    pub fn drop(mut self, side: &Side) -> Self {
+        self.0.push_back(Action::Drop(side.clone()));
+        self
+    }
+
+    pub fn suck(mut self, side: &Side) -> Self {
+        self.0.push_back(Action::Suck(side.clone()));
+        self
+    }
+
+    pub fn drain(mut self, side: &Side) -> Self {
+        self.0.push_back(Action::Drain(side.clone()));
+        self
+    }
+
+    pub fn fill(mut self, side: &Side) -> Self {
+        self.0.push_back(Action::Fill(side.clone()));
+        self
+    }
+
+    pub fn use_tool(mut self, side: &Side) -> Self {
+        self.0.push_back(Action::Use(side.clone()));
+        self
+    }
+
+    pub fn chain(mut self, mut sequence: Self) -> Self {
+        self.0.append(&mut sequence.0);
+        self
+    }
+
+    pub fn build(self) -> ActionSequence {
+        ActionSequence(self.0)
+    }
+}
 
 #[derive(Debug)]
 enum State {
@@ -65,10 +139,9 @@ impl Vehicle {
         if let State::Offline = self.state {
             match track_graph.find_shortest_node(current_position) {
                 Ok(node) => {
-                    let mut actions = LinkedList::new();
-                    actions.push_back(Action::Move(node.clone()));
+                    let actions = ActionSequenceBuilder::new().move_to(node.clone()).build();
                     self.node = Some(node);
-                    self.state = State::Initing(actions.clone());
+                    self.state = State::Initing(actions);
                 }
                 Err(_) => error!("{} can't find shortest node.", self.id),
             }
@@ -90,30 +163,25 @@ impl Vehicle {
         }
     }
 
-    fn get_move_actions_from_path(&self, path: track::Path) -> ActionSequence {
-        let mut actions: ActionSequence = LinkedList::new();
-        for node in path {
-            actions.push_back(Action::Move(node));
-        }
-        actions
-    }
-
     fn next_action(
         current_position: &Position,
         landmark: &mut Option<Rc<track::Node>>,
         actions: &mut ActionSequence,
     ) -> Option<Action> {
-        match actions.front().unwrap() {
+        match actions.next_action()? {
             Action::Move(node) => {
                 if current_position == node.position() {
                     *landmark = Some(node.clone());
-                    actions.pop_front();
-                    return actions.front().cloned();
+                    actions.pop_next_action();
+                    return actions.next_action().cloned();
                 } else {
-                    return Some(actions.front().unwrap().clone());
+                    return Some(actions.next_action().unwrap().clone());
                 }
             }
-            _ => return actions.pop_front(),
+            _ => {
+                actions.pop_next_action();
+                return actions.next_action().cloned();
+            }
         }
     }
 
@@ -127,7 +195,7 @@ impl Vehicle {
                 {
                     Ok(path) => {
                         track_graph.lock_node(path.last().unwrap().name());
-                        Some(self.get_move_actions_from_path(path))
+                        Some(ActionSequenceBuilder::new().move_path(&path).build())
                     }
                     Err(e) => {
                         error!(
@@ -152,11 +220,8 @@ impl Vehicle {
 
     fn charging(&mut self, track_graph: &TrackGraph) -> Result<()> {
         if let State::Parking(actions) = &self.state {
-            for station in actions.iter().rev() {
-                if let Action::Move(node) = station {
-                    track_graph.unlock_node(node.name());
-                    break;
-                }
+            if let Some(node) = actions.last_move_node() {
+                track_graph.unlock_node(node.name());
             }
         }
         match self.state {
@@ -165,7 +230,7 @@ impl Vehicle {
                     match track_graph.find_charging_path(self.node.clone().unwrap().name()) {
                         Ok(path) => {
                             track_graph.lock_node(path.last().unwrap().name());
-                            Some(self.get_move_actions_from_path(path))
+                            Some(ActionSequenceBuilder::new().move_path(&path).build())
                         }
                         Err(e) => {
                             error!(
@@ -264,11 +329,8 @@ impl Vehicle {
                 Ok(())
             }
             State::Parking(parking_actions) => {
-                for station in parking_actions.iter().rev() {
-                    if let Action::Move(node) = station {
-                        track_graph.unlock_node(node.name());
-                        break;
-                    }
+                if let Some(node) = parking_actions.last_move_node() {
+                    track_graph.unlock_node(node.name());
                 }
                 self.state = State::Processing(actions);
                 Ok(())
