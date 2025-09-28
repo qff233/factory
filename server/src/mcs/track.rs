@@ -7,13 +7,21 @@ use std::{
     rc::Rc,
 };
 
+#[derive(Debug)]
+pub enum Error {
+    NotFindNode,
+    NotFindAnyPath,
+    NotFindAnyNode,
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
 #[derive(Debug, PartialEq)]
 pub enum NodeType {
     Fork,
     ChargingStation,
     ParkingStation,
     Stocker(Side),
-    Machine(Side),
 }
 
 impl From<Vec<&str>> for NodeType {
@@ -22,10 +30,6 @@ impl From<Vec<&str>> for NodeType {
             "stocker" => {
                 let side = *value.get(1).expect("can not get machine side");
                 Self::Stocker(side.into())
-            }
-            "machine" => {
-                let side = *value.get(1).expect("can not get machine side");
-                Self::Machine(side.into())
             }
             _ => panic!("no such node_type, {:?}", value),
         }
@@ -46,6 +50,13 @@ impl Node {
 
     pub fn position(&self) -> &Position {
         &self.position
+    }
+
+    pub fn side(&self) -> Option<&Side> {
+        match &self.node_type {
+            NodeType::Stocker(side) => Some(side),
+            _ => None,
+        }
     }
 }
 
@@ -69,13 +80,6 @@ struct Edge {
 pub struct TrackGraph {
     edges: HashMap<String, Vec<Rc<Edge>>>,
     nodes: HashMap<String, Rc<Node>>,
-}
-
-#[derive(Debug)]
-pub enum FindError {
-    NotFindNode,
-    NotFindAnyPath,
-    NotFindAnyNode,
 }
 
 fn heuristic_distance(from_position: &Position, to_position: &Position) -> f64 {
@@ -118,6 +122,10 @@ impl TrackGraph {
             .push(edge.clone());
     }
 
+    pub fn node(&self, name: &String) -> Option<Rc<Node>> {
+        self.nodes.get(name).cloned()
+    }
+
     pub fn lock_node(&self, node_name: &str) {
         self.edges
             .iter()
@@ -149,7 +157,7 @@ impl TrackGraph {
         result
     }
 
-    fn a_star(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path, FindError> {
+    fn a_star(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path> {
         let mut open_node: PriorityQueue<Rc<Node>> = PriorityQueue::new();
         let mut close_node: HashSet<String> = HashSet::new();
         let mut came_from: HashMap<String, Rc<Node>> = HashMap::new();
@@ -159,14 +167,8 @@ impl TrackGraph {
         }
         g_score.insert(begin_node_name.to_string(), 0.0);
 
-        let begin_node = self
-            .nodes
-            .get(begin_node_name)
-            .ok_or(FindError::NotFindNode)?;
-        let end_node = self
-            .nodes
-            .get(end_node_name)
-            .ok_or(FindError::NotFindNode)?;
+        let begin_node = self.nodes.get(begin_node_name).ok_or(Error::NotFindNode)?;
+        let end_node = self.nodes.get(end_node_name).ok_or(Error::NotFindNode)?;
 
         open_node.push(
             heuristic_distance(begin_node.position(), end_node.position()),
@@ -213,10 +215,10 @@ impl TrackGraph {
             }
         }
 
-        Err(FindError::NotFindAnyPath)
+        Err(Error::NotFindAnyPath)
     }
 
-    fn dijkstra(&self, begin_node_name: &str, node_type: &NodeType) -> Result<Path, FindError> {
+    fn dijkstra(&self, begin_node_name: &str, node_type: &NodeType) -> Result<Path> {
         let mut open_node: PriorityQueue<Rc<Node>> = PriorityQueue::new();
         let mut close_node: HashSet<String> = HashSet::new();
         let mut came_from: HashMap<String, Rc<Node>> = HashMap::new();
@@ -226,10 +228,7 @@ impl TrackGraph {
         }
         g_score.insert(begin_node_name.to_string(), 0.0);
 
-        let begin_node = self
-            .nodes
-            .get(begin_node_name)
-            .ok_or(FindError::NotFindNode)?;
+        let begin_node = self.nodes.get(begin_node_name).ok_or(Error::NotFindNode)?;
 
         open_node.push(0.0, begin_node.clone());
 
@@ -270,14 +269,14 @@ impl TrackGraph {
             }
         }
 
-        Err(FindError::NotFindAnyPath)
+        Err(Error::NotFindAnyPath)
     }
 
-    pub fn find_path(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path, FindError> {
+    pub fn find_path(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path> {
         self.a_star(begin_node_name, end_node_name)
     }
 
-    pub fn find_shortest_node(&self, position: &Position) -> Result<Rc<Node>, FindError> {
+    pub fn find_shortest_node(&self, position: &Position) -> Result<Rc<Node>> {
         let mut nodes: Vec<(Rc<Node>, f64)> = Vec::new();
         nodes.reserve(self.nodes.len());
         self.nodes.iter().for_each(|(_, to_node)| {
@@ -287,22 +286,18 @@ impl TrackGraph {
             ));
         });
         nodes.sort_by(|a, b| a.1.total_cmp(&b.1));
-        Ok(nodes.get(0).ok_or(FindError::NotFindAnyNode)?.0.clone())
+        Ok(nodes.get(0).ok_or(Error::NotFindAnyNode)?.0.clone())
     }
 
-    pub fn find_path_by_type(
-        &self,
-        from_node_name: &str,
-        node_type: NodeType,
-    ) -> Result<Path, FindError> {
+    pub fn find_path_by_type(&self, from_node_name: &str, node_type: NodeType) -> Result<Path> {
         self.dijkstra(from_node_name, &node_type)
     }
 
-    pub fn find_parking_path(&self, from_node_name: &str) -> Result<Path, FindError> {
+    pub fn find_parking_path(&self, from_node_name: &str) -> Result<Path> {
         self.find_path_by_type(from_node_name, NodeType::ParkingStation)
     }
 
-    pub fn find_charging_path(&self, from_node_name: &str) -> Result<Path, FindError> {
+    pub fn find_charging_path(&self, from_node_name: &str) -> Result<Path> {
         self.find_path_by_type(from_node_name, NodeType::ChargingStation)
     }
 }
@@ -387,12 +382,12 @@ impl TrackGraphBuilder {
     pub fn node(
         mut self,
         name: &str,
-        position: Position,
+        position: impl Into<Position>,
         node_type: NodeType,
     ) -> TrackGraphBuilder {
         let node = Node {
             name: name.to_string(),
-            position,
+            position: position.into(),
             node_type,
         };
         self.track_graph.add_node(node);
@@ -437,11 +432,35 @@ impl TrackGraphBuilder {
 mod test {
     use super::*;
 
+    fn get_grack_graph() -> TrackGraph {
+        TrackGraphBuilder::new()
+            .node("P2", (0.0, 0.0, 0.0), NodeType::ParkingStation)
+            .node("C1", (1.0, 0.0, 0.0), NodeType::ChargingStation)
+            .node("P1", (2.0, 0.0, 0.0), NodeType::ParkingStation)
+            .node("A1", (2.0, 1.0, 0.0), NodeType::Fork)
+            .node("A2", (1.0, 1.0, 0.0), NodeType::Fork)
+            .node("A3", (1.0, 2.0, 0.0), NodeType::Fork)
+            .node("A4", (2.0, 2.0, 0.0), NodeType::Fork)
+            .node("A5", (0.0, 2.0, 0.0), NodeType::Fork)
+            .node("A6", (0.0, 1.0, 0.0), NodeType::Fork)
+            .edge_double("P2", "A6")
+            .edge_double("C1", "A2")
+            .edge_double("P1", "A1")
+            .edge("A6", "A2")
+            .edge("A2", "A1")
+            .edge("A1", "A4")
+            .edge("A4", "A3")
+            .edge("A3", "A2")
+            .edge("A3", "A5")
+            .edge("A5", "A6")
+            .build()
+    }
+
     #[test]
     fn add_node_edge() {
         let track_graph = TrackGraphBuilder::new()
-            .node("A", (0.0, 1.0, 2.0).into(), NodeType::Stocker(Side::NegY))
-            .node("B", (2.0, 4.0, 6.0).into(), NodeType::Stocker(Side::NegY))
+            .node("A", (0.0, 1.0, 2.0), NodeType::Stocker(Side::NegY))
+            .node("B", (2.0, 4.0, 6.0), NodeType::Stocker(Side::NegY))
             .edge("A", "B")
             .build();
 
@@ -460,28 +479,7 @@ mod test {
 
     #[test]
     fn a_star() {
-        let track_graph = TrackGraphBuilder::new()
-            .node("P2", (0.0, 0.0, 0.0).into(), NodeType::ParkingStation)
-            .node("C1", (1.0, 0.0, 0.0).into(), NodeType::ChargingStation)
-            .node("P1", (2.0, 0.0, 0.0).into(), NodeType::ParkingStation)
-            .node("A1", (2.0, 1.0, 0.0).into(), NodeType::Fork)
-            .node("A2", (1.0, 1.0, 0.0).into(), NodeType::Fork)
-            .node("A3", (1.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A4", (2.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A5", (0.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A6", (0.0, 1.0, 0.0).into(), NodeType::Fork)
-            .edge_double("P2", "A6")
-            .edge_double("C1", "A2")
-            .edge_double("P1", "A1")
-            .edge("A6", "A2")
-            .edge("A2", "A1")
-            .edge("A1", "A4")
-            .edge("A4", "A3")
-            .edge("A3", "A2")
-            .edge("A3", "A5")
-            .edge("A5", "A6")
-            .build();
-
+        let track_graph = get_grack_graph();
         let mut path: Vec<String> = Vec::new();
         let result = track_graph.a_star("A4", "P1").unwrap();
         for node in result {
@@ -492,27 +490,7 @@ mod test {
 
     #[test]
     fn find_parking_charging_path() {
-        let track_graph = TrackGraphBuilder::new()
-            .node("P2", (0.0, 0.0, 0.0).into(), NodeType::ParkingStation)
-            .node("C1", (1.0, 0.0, 0.0).into(), NodeType::ChargingStation)
-            .node("P1", (2.0, 0.0, 0.0).into(), NodeType::ParkingStation)
-            .node("A1", (2.0, 1.0, 0.0).into(), NodeType::Fork)
-            .node("A2", (1.0, 1.0, 0.0).into(), NodeType::Fork)
-            .node("A3", (1.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A4", (2.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A5", (0.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A6", (0.0, 1.0, 0.0).into(), NodeType::Fork)
-            .edge_double("P2", "A6")
-            .edge_double("C1", "A2")
-            .edge_double("P1", "A1")
-            .edge("A6", "A2")
-            .edge("A2", "A1")
-            .edge("A1", "A4")
-            .edge("A4", "A3")
-            .edge("A3", "A2")
-            .edge("A3", "A5")
-            .edge("A5", "A6")
-            .build();
+        let track_graph = get_grack_graph();
 
         let mut path: Vec<String> = Vec::new();
         let result = track_graph.find_parking_path("A4").unwrap();

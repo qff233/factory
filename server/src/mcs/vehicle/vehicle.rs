@@ -3,9 +3,18 @@ use std::rc::Rc;
 
 use tracing::error;
 
-use super::Position;
-use super::Side;
-use super::track::{self, TrackGraph};
+use crate::mcs::Position;
+use crate::mcs::Side;
+use crate::mcs::track;
+use crate::mcs::track::TrackGraph;
+
+#[derive(Debug)]
+pub enum Error {
+    StateError,
+    FindPathError,
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
 pub enum Action {
@@ -18,12 +27,6 @@ pub enum Action {
 }
 
 type ActionSequence = LinkedList<Action>;
-
-#[derive(Debug)]
-enum ErrorKind {
-    StateError,
-    FindPathError,
-}
 
 #[derive(Debug)]
 enum State {
@@ -39,31 +42,18 @@ enum State {
 }
 
 #[derive(Debug)]
-pub enum TransType {
-    Item,
-    Fluid,
-}
-
-#[derive(Debug)]
-pub struct Vechicle {
+pub struct Vehicle {
     id: u32,
-    trans_type: TransType,
     state: State,
-    landmark: Option<Rc<track::Node>>,
+    node: Option<Rc<track::Node>>,
 }
 
-impl Vechicle {
-    fn new(id: u32) -> Self {
-        let trans_type = if id > 2000 {
-            TransType::Fluid
-        } else {
-            TransType::Item
-        };
+impl Vehicle {
+    pub fn new(id: u32) -> Self {
         Self {
             id,
-            trans_type,
             state: State::Offline,
-            landmark: None,
+            node: None,
         }
     }
 
@@ -71,17 +61,32 @@ impl Vechicle {
         self.state = State::Offline;
     }
 
-    fn inline(&mut self, current_position: &Position, track_graph: &TrackGraph) {
+    pub fn inline(&mut self, current_position: &Position, track_graph: &TrackGraph) {
         if let State::Offline = self.state {
             match track_graph.find_shortest_node(current_position) {
                 Ok(node) => {
                     let mut actions = LinkedList::new();
                     actions.push_back(Action::Move(node.clone()));
-                    self.landmark = Some(node);
+                    self.node = Some(node);
                     self.state = State::Initing(actions.clone());
                 }
                 Err(_) => error!("{} can't find shortest node.", self.id),
             }
+        }
+    }
+
+    pub fn node(&self) -> Option<Rc<track::Node>> {
+        self.node.clone()
+    }
+
+    pub fn idle(&self) -> bool {
+        match &self.state {
+            State::InitDone
+            | State::ChargeDone
+            | State::ProcessDone
+            | State::ParkDone
+            | State::Parking(_) => true,
+            State::Initing(_) | State::Charging(_) | State::Processing(_) | State::Offline => false,
         }
     }
 
@@ -112,40 +117,40 @@ impl Vechicle {
         }
     }
 
-    fn parking(&mut self, track_graph: &TrackGraph) -> Result<(), ErrorKind> {
+    fn parking(&mut self, track_graph: &TrackGraph) -> Result<()> {
         if let State::ChargeDone = &self.state {
-            track_graph.unlock_node(self.landmark.clone().unwrap().name());
+            track_graph.unlock_node(self.node.clone().unwrap().name());
         }
         match self.state {
             State::ChargeDone | State::ProcessDone | State::InitDone => {
-                let actions =
-                    match track_graph.find_parking_path(self.landmark.clone().unwrap().name()) {
-                        Ok(path) => {
-                            track_graph.lock_node(path.last().unwrap().name());
-                            Some(self.get_move_actions_from_path(path))
-                        }
-                        Err(e) => {
-                            error!(
-                                "{} suffer {:?}, current state: {:?}",
-                                self.id, e, self.state
-                            );
-                            None
-                        }
-                    };
+                let actions = match track_graph.find_parking_path(self.node.clone().unwrap().name())
+                {
+                    Ok(path) => {
+                        track_graph.lock_node(path.last().unwrap().name());
+                        Some(self.get_move_actions_from_path(path))
+                    }
+                    Err(e) => {
+                        error!(
+                            "{} suffer {:?}, current state: {:?}",
+                            self.id, e, self.state
+                        );
+                        None
+                    }
+                };
 
                 match actions {
                     Some(actions) => {
                         self.state = State::Parking(actions);
                         Ok(())
                     }
-                    None => Err(ErrorKind::FindPathError),
+                    None => Err(Error::FindPathError),
                 }
             }
-            _ => Err(ErrorKind::StateError),
+            _ => Err(Error::StateError),
         }
     }
 
-    fn charging(&mut self, track_graph: &TrackGraph) -> Result<(), ErrorKind> {
+    fn charging(&mut self, track_graph: &TrackGraph) -> Result<()> {
         if let State::Parking(actions) = &self.state {
             for station in actions.iter().rev() {
                 if let Action::Move(node) = station {
@@ -157,7 +162,7 @@ impl Vechicle {
         match self.state {
             State::ParkDone | State::Parking(_) | State::ProcessDone => {
                 let actions =
-                    match track_graph.find_charging_path(self.landmark.clone().unwrap().name()) {
+                    match track_graph.find_charging_path(self.node.clone().unwrap().name()) {
                         Ok(path) => {
                             track_graph.lock_node(path.last().unwrap().name());
                             Some(self.get_move_actions_from_path(path))
@@ -176,7 +181,7 @@ impl Vechicle {
 
                 Ok(())
             }
-            _ => Err(ErrorKind::StateError),
+            _ => Err(Error::StateError),
         }
     }
 
@@ -190,14 +195,14 @@ impl Vechicle {
         loop {
             match &mut self.state {
                 State::Initing(actions) => {
-                    let action = Self::next_action(current_position, &mut self.landmark, actions);
+                    let action = Self::next_action(current_position, &mut self.node, actions);
                     if action.is_some() {
                         return action;
                     }
                     self.state = State::InitDone;
                 }
                 State::Processing(actions) => {
-                    let action = Self::next_action(current_position, &mut self.landmark, actions);
+                    let action = Self::next_action(current_position, &mut self.node, actions);
                     if action.is_some() {
                         return action;
                     }
@@ -207,8 +212,7 @@ impl Vechicle {
                     if require_charge {
                         self.charging(track_graph).unwrap();
                     } else {
-                        let action =
-                            Self::next_action(current_position, &mut self.landmark, actions);
+                        let action = Self::next_action(current_position, &mut self.node, actions);
                         if action.is_some() {
                             return action;
                         }
@@ -216,7 +220,7 @@ impl Vechicle {
                     }
                 }
                 State::Charging(actions) => {
-                    let action = Self::next_action(current_position, &mut self.landmark, actions);
+                    let action = Self::next_action(current_position, &mut self.node, actions);
                     if action.is_some() {
                         return action;
                     }
@@ -252,14 +256,10 @@ impl Vechicle {
         }
     }
 
-    pub fn processing(
-        &mut self,
-        actions: ActionSequence,
-        track_graph: &TrackGraph,
-    ) -> Result<(), ErrorKind> {
+    pub fn processing(&mut self, actions: ActionSequence, track_graph: &TrackGraph) -> Result<()> {
         match &self.state {
             State::ParkDone | State::ChargeDone | State::ProcessDone | State::InitDone => {
-                track_graph.unlock_node(self.landmark.clone().unwrap().name());
+                track_graph.unlock_node(self.node.clone().unwrap().name());
                 self.state = State::Processing(actions);
                 Ok(())
             }
@@ -274,7 +274,7 @@ impl Vechicle {
                 Ok(())
             }
             State::Initing(_) | State::Processing(_) | State::Charging(_) | State::Offline => {
-                Err(ErrorKind::StateError)
+                Err(Error::StateError)
             }
         }
     }
@@ -284,18 +284,18 @@ impl Vechicle {
 mod tests {
     use super::track::NodeType;
     use super::*;
-    #[test]
-    fn init() {
-        let track_graph = track::TrackGraphBuilder::new()
-            .node("P2", (0.0, 0.0, 0.0).into(), NodeType::ParkingStation)
-            .node("C1", (1.0, 0.0, 0.0).into(), NodeType::ChargingStation)
-            .node("P1", (2.0, 0.0, 0.0).into(), NodeType::ParkingStation)
-            .node("A1", (2.0, 1.0, 0.0).into(), NodeType::Fork)
-            .node("A2", (1.0, 1.0, 0.0).into(), NodeType::Fork)
-            .node("A3", (1.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A4", (2.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A5", (0.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A6", (0.0, 1.0, 0.0).into(), NodeType::Fork)
+
+    fn get_tarck_graph() -> track::TrackGraph {
+        track::TrackGraphBuilder::new()
+            .node("P2", (0.0, 0.0, 0.0), NodeType::ParkingStation)
+            .node("C1", (1.0, 0.0, 0.0), NodeType::ChargingStation)
+            .node("P1", (2.0, 0.0, 0.0), NodeType::ParkingStation)
+            .node("A1", (2.0, 1.0, 0.0), NodeType::Fork)
+            .node("A2", (1.0, 1.0, 0.0), NodeType::Fork)
+            .node("A3", (1.0, 2.0, 0.0), NodeType::Fork)
+            .node("A4", (2.0, 2.0, 0.0), NodeType::Fork)
+            .node("A5", (0.0, 2.0, 0.0), NodeType::Fork)
+            .node("A6", (0.0, 1.0, 0.0), NodeType::Fork)
             .edge_double("P2", "A6")
             .edge_double("C1", "A2")
             .edge_double("P1", "A1")
@@ -306,9 +306,14 @@ mod tests {
             .edge("A3", "A2")
             .edge("A3", "A5")
             .edge("A5", "A6")
-            .build();
+            .build()
+    }
 
-        let mut vehicle = Vechicle::new(1000);
+    #[test]
+    fn init() {
+        let track_graph = get_tarck_graph();
+
+        let mut vehicle = Vehicle::new(1000);
         let current_position = (8.0, 8.0, 0.0).into();
         vehicle.inline(&current_position, &track_graph);
 
@@ -396,29 +401,9 @@ mod tests {
 
     #[test]
     fn auto_charging() {
-        let track_graph = track::TrackGraphBuilder::new()
-            .node("P2", (0.0, 0.0, 0.0).into(), NodeType::ParkingStation)
-            .node("C1", (1.0, 0.0, 0.0).into(), NodeType::ChargingStation)
-            .node("P1", (2.0, 0.0, 0.0).into(), NodeType::ParkingStation)
-            .node("A1", (2.0, 1.0, 0.0).into(), NodeType::Fork)
-            .node("A2", (1.0, 1.0, 0.0).into(), NodeType::Fork)
-            .node("A3", (1.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A4", (2.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A5", (0.0, 2.0, 0.0).into(), NodeType::Fork)
-            .node("A6", (0.0, 1.0, 0.0).into(), NodeType::Fork)
-            .edge_double("P2", "A6")
-            .edge_double("C1", "A2")
-            .edge_double("P1", "A1")
-            .edge("A6", "A2")
-            .edge("A2", "A1")
-            .edge("A1", "A4")
-            .edge("A4", "A3")
-            .edge("A3", "A2")
-            .edge("A3", "A5")
-            .edge("A5", "A6")
-            .build();
+        let track_graph = get_tarck_graph();
 
-        let mut vehicle = Vechicle::new(1000);
+        let mut vehicle = Vehicle::new(1000);
 
         let current_position = (2.0, 2.0, 0.0).into();
         vehicle.inline(&current_position, &track_graph);
@@ -428,6 +413,8 @@ mod tests {
         } else {
             assert!(false)
         }
+        assert_eq!(track_graph.get_lock_node().len(), 1);
+        assert!(track_graph.get_lock_node().contains("C1"));
 
         // arrive A3, action move to A2
         let current_position = (1.0, 2.0, 0.0).into();
@@ -437,6 +424,8 @@ mod tests {
         {
             assert_eq!(node.name(), "A2");
         }
+        assert_eq!(track_graph.get_lock_node().len(), 1);
+        assert!(track_graph.get_lock_node().contains("C1"));
 
         // arrive A2, action move to C1
         let current_position = (1.0, 1.0, 0.0).into();
@@ -446,8 +435,8 @@ mod tests {
         {
             assert_eq!(node.name(), "C1");
         }
-
         assert_eq!(track_graph.get_lock_node().len(), 1);
+        assert!(track_graph.get_lock_node().contains("C1"));
 
         // charge over
         let current_position = (1.0, 0.0, 0.0).into();
@@ -458,6 +447,7 @@ mod tests {
             assert_eq!(node.name(), "A2");
         }
         assert_eq!(track_graph.get_lock_node().len(), 1);
+        assert!(track_graph.get_lock_node().contains("P1"));
 
         // arrive A2, action move to A1
         let current_position = (1.0, 1.0, 0.0).into();
@@ -468,6 +458,7 @@ mod tests {
             assert_eq!(node.name(), "A1");
         }
         assert_eq!(track_graph.get_lock_node().len(), 1);
+        assert!(track_graph.get_lock_node().contains("P1"));
 
         println!("{:#?} \n {:#?}", vehicle, track_graph.get_lock_node());
         // arrive A1, action move to P1
@@ -479,14 +470,17 @@ mod tests {
             assert_eq!(node.name(), "P1");
         }
         assert_eq!(track_graph.get_lock_node().len(), 1);
+        assert!(track_graph.get_lock_node().contains("P1"));
 
         // arrive P1
         let current_position = (2.0, 0.0, 0.0).into();
         vehicle.get_action(&current_position, 1.0, &track_graph);
+        assert!(track_graph.get_lock_node().contains("P1"));
 
         if let State::ParkDone = vehicle.state {
         } else {
             assert!(false)
         }
+        assert!(track_graph.get_lock_node().contains("P1"));
     }
 }
