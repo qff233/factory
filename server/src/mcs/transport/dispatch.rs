@@ -5,15 +5,15 @@ use tracing::warn;
 use crate::mcs::{
     Position,
     prelude::*,
-    track::{self, TrackGraph},
-    vehicle::vehicle::{Action, ActionSequenceBuilder, Vehicle},
+    transport::track::{self, TrackGraph},
+    transport::vehicle::{Action, ActionSequenceBuilder, Vehicle},
 };
 
 #[derive(Debug)]
 pub enum Error {
     VehicleBusy,
-    NodeError,
-    FindPathError,
+    NodeFind,
+    PathFind,
 }
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -28,7 +28,7 @@ pub enum ToolType {
 }
 
 #[derive(Debug)]
-pub enum Exec {
+pub enum Event {
     TransItem {
         begin_node_name: String,
         end_node_name: String,
@@ -45,15 +45,16 @@ pub enum Exec {
         end_node_name: String,
         tool_type: ToolType,
     },
+    Timeout(u32),
 }
 
-impl Exec {
+impl Event {
     fn contain_id(&self, id: &u32) -> bool {
         match self {
-            Exec::TransItem { .. } => (2000..4000).contains(id),
-            Exec::TransFluid { .. } => (4000..6000).contains(id),
-            Exec::TransTrolley { .. } => (6000..8000).contains(id),
-            Exec::UseTool { tool_type, .. } => match tool_type {
+            Event::TransItem { .. } => (2000..4000).contains(id),
+            Event::TransFluid { .. } => (4000..6000).contains(id),
+            Event::TransTrolley { .. } => (6000..8000).contains(id),
+            Event::UseTool { tool_type, .. } => match tool_type {
                 ToolType::Wrench => (000..100).contains(id),
                 ToolType::Solder => (100..200).contains(id),
                 ToolType::Crowbar => (200..300).contains(id),
@@ -61,17 +62,18 @@ impl Exec {
                 ToolType::WireNipper => (400..500).contains(id),
                 ToolType::SoftHammer => (500..600).contains(id),
             },
+            Event::Timeout(_id) => unreachable!(),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct DispatchRequest {
-    sender: mpsc::Sender<Exec>,
+    sender: mpsc::Sender<Event>,
 }
 
 impl DispatchRequest {
-    pub fn new(sender: mpsc::Sender<Exec>) -> Self {
+    pub fn new(sender: mpsc::Sender<Event>) -> Self {
         Self { sender }
     }
 
@@ -81,7 +83,7 @@ impl DispatchRequest {
         to: impl Into<String>,
     ) -> Result<()> {
         self.sender
-            .send(Exec::TransItem {
+            .send(Event::TransItem {
                 begin_node_name: from.into(),
                 end_node_name: to.into(),
             })
@@ -96,7 +98,7 @@ impl DispatchRequest {
         to: impl Into<String>,
     ) -> Result<()> {
         self.sender
-            .send(Exec::TransTrolley {
+            .send(Event::TransTrolley {
                 begin_node_name: from.into(),
                 end_node_name: to.into(),
             })
@@ -111,7 +113,7 @@ impl DispatchRequest {
         to: impl Into<String>,
     ) -> Result<()> {
         self.sender
-            .send(Exec::TransFluid {
+            .send(Event::TransFluid {
                 begin_node_name: from.into(),
                 end_node_name: to.into(),
             })
@@ -122,7 +124,7 @@ impl DispatchRequest {
 
     pub async fn use_tool(&mut self, pos: impl Into<String>, tool_type: ToolType) -> Result<()> {
         self.sender
-            .send(Exec::UseTool {
+            .send(Event::UseTool {
                 end_node_name: pos.into(),
                 tool_type,
             })
@@ -137,12 +139,12 @@ pub struct DispatchExec {
     tool_warn_level: f32,
     track_graph: TrackGraph,
     vehicles: HashMap<u32, Vehicle>,
-    receiver: mpsc::Receiver<Exec>,
+    receiver: mpsc::Receiver<Event>,
 }
 
 impl DispatchExec {
     pub fn new(
-        receiver: mpsc::Receiver<Exec>,
+        receiver: mpsc::Receiver<Event>,
         tool_warn_level: f32,
         track_graph: TrackGraph,
     ) -> Self {
@@ -161,34 +163,44 @@ impl DispatchExec {
         }
     }
 
-    pub fn get_action(
+    pub async fn get_action(
         &mut self,
         id: u32,
         position: impl Into<Position>,
         battery_level: f32,
         tool_level: Option<f32>,
     ) -> Option<Action> {
-        self.receive_tasks();
+        self.receive_tasks().await;
 
-        if let Some(tool_level) = tool_level {
-            if tool_level < self.tool_warn_level {
-                warn!("{} suffer low tool level", id);
-            }
+        if let Some(tool_level) = tool_level
+            && tool_level < self.tool_warn_level
+        {
+            warn!("{} suffer low tool level", id);
         }
         let position = &position.into();
         match self.vehicles.get_mut(&id) {
-            Some(vehicle) => vehicle.get_action(position, battery_level, &self.track_graph),
+            Some(vehicle) => {
+                vehicle
+                    .get_action(position, battery_level, &self.track_graph)
+                    .await
+            }
             None => {
                 let mut vehicle = Vehicle::new(id);
                 vehicle.inline(position, &self.track_graph);
-                let action = vehicle.get_action(position, battery_level, &self.track_graph);
+                let action = vehicle
+                    .get_action(position, battery_level, &self.track_graph)
+                    .await;
                 self.vehicles.insert(id, vehicle);
                 action
             }
         }
     }
 
-    fn find_idle_vehicle_shortest_path(&self, to: &str, exec: &Exec) -> Option<(u32, track::Path)> {
+    async fn find_idle_vehicle_shortest_path(
+        &self,
+        to: &str,
+        exec: &Event,
+    ) -> Option<(u32, track::Path)> {
         let mut result: Vec<(u32, track::Path)> = Vec::new();
         for (id, vehicle) in self
             .vehicles
@@ -198,6 +210,7 @@ impl DispatchExec {
             let path = self
                 .track_graph
                 .find_path(vehicle.node()?.name(), to)
+                .await
                 .ok()?;
             result.push((*id, path));
         }
@@ -209,28 +222,30 @@ impl DispatchExec {
         Ok(self
             .track_graph
             .node(node_name)
-            .ok_or(Error::NodeError)?
+            .ok_or(Error::NodeFind)?
             .side()
-            .ok_or(Error::NodeError)?
+            .ok_or(Error::NodeFind)?
             .clone())
     }
 
-    fn trans(&mut self, exec: &Exec) -> Result<()> {
+    async fn trans(&mut self, exec: &Event) -> Result<()> {
         match exec {
-            Exec::TransItem {
+            Event::TransItem {
                 begin_node_name,
                 end_node_name,
             } => {
                 let (id, to_begin_path) = self
-                    .find_idle_vehicle_shortest_path(&begin_node_name, exec)
+                    .find_idle_vehicle_shortest_path(begin_node_name, exec)
+                    .await
                     .ok_or(Error::VehicleBusy)?;
                 let begin_side = self.node_side(begin_node_name)?;
                 let end_side = self.node_side(end_node_name)?;
                 let vehicle = self.vehicles.get_mut(&id).ok_or(Error::VehicleBusy)?;
                 let begin_to_end_path = self
                     .track_graph
-                    .find_path(&begin_node_name, &end_node_name)
-                    .map_err(|_| Error::FindPathError)?;
+                    .find_path(begin_node_name, end_node_name)
+                    .await
+                    .map_err(|_| Error::PathFind)?;
 
                 let actions = ActionSequenceBuilder::new()
                     .move_path(&to_begin_path)
@@ -241,22 +256,25 @@ impl DispatchExec {
 
                 vehicle
                     .processing(actions, &self.track_graph)
+                    .await
                     .map_err(|_| Error::VehicleBusy)?
             }
-            Exec::TransFluid {
+            Event::TransFluid {
                 begin_node_name,
                 end_node_name,
             } => {
                 let (id, to_begin_path) = self
-                    .find_idle_vehicle_shortest_path(&begin_node_name, exec)
+                    .find_idle_vehicle_shortest_path(begin_node_name, exec)
+                    .await
                     .ok_or(Error::VehicleBusy)?;
                 let begin_side = self.node_side(begin_node_name)?;
                 let end_side = self.node_side(end_node_name)?;
                 let vehicle = self.vehicles.get_mut(&id).ok_or(Error::VehicleBusy)?;
                 let begin_to_end_path = self
                     .track_graph
-                    .find_path(&begin_node_name, &end_node_name)
-                    .map_err(|_| Error::FindPathError)?;
+                    .find_path(begin_node_name, end_node_name)
+                    .await
+                    .map_err(|_| Error::PathFind)?;
 
                 let actions = ActionSequenceBuilder::new()
                     .move_path(&to_begin_path)
@@ -267,22 +285,25 @@ impl DispatchExec {
 
                 vehicle
                     .processing(actions, &self.track_graph)
+                    .await
                     .map_err(|_| Error::VehicleBusy)?
             }
-            Exec::TransTrolley {
+            Event::TransTrolley {
                 begin_node_name,
                 end_node_name,
             } => {
                 let (id, to_begin_path) = self
-                    .find_idle_vehicle_shortest_path(&begin_node_name, exec)
+                    .find_idle_vehicle_shortest_path(begin_node_name, exec)
+                    .await
                     .ok_or(Error::VehicleBusy)?;
                 let begin_side = self.node_side(begin_node_name)?;
                 let end_side = self.node_side(end_node_name)?;
                 let vehicle = self.vehicles.get_mut(&id).ok_or(Error::VehicleBusy)?;
                 let begin_to_end_path = self
                     .track_graph
-                    .find_path(&begin_node_name, &end_node_name)
-                    .map_err(|_| Error::FindPathError)?;
+                    .find_path(begin_node_name, end_node_name)
+                    .await
+                    .map_err(|_| Error::PathFind)?;
 
                 let actions = ActionSequenceBuilder::new()
                     .move_path(&to_begin_path)
@@ -293,11 +314,13 @@ impl DispatchExec {
 
                 vehicle
                     .processing(actions, &self.track_graph)
+                    .await
                     .map_err(|_| Error::VehicleBusy)?
             }
-            Exec::UseTool { end_node_name, .. } => {
+            Event::UseTool { end_node_name, .. } => {
                 let (id, to_end_path) = self
-                    .find_idle_vehicle_shortest_path(&end_node_name, exec)
+                    .find_idle_vehicle_shortest_path(end_node_name, exec)
+                    .await
                     .ok_or(Error::VehicleBusy)?;
                 let end_side = self.node_side(end_node_name)?;
                 let vehicle = self.vehicles.get_mut(&id).ok_or(Error::VehicleBusy)?;
@@ -309,16 +332,20 @@ impl DispatchExec {
 
                 vehicle
                     .processing(actions, &self.track_graph)
+                    .await
                     .map_err(|_| Error::VehicleBusy)?
+            }
+            Event::Timeout(id) => {
+                self.offline(*id);
             }
         }
 
         Ok(())
     }
 
-    fn receive_tasks(&mut self) {
+    async fn receive_tasks(&mut self) {
         while let Ok(exec) = self.receiver.try_recv() {
-            if let Err(e) = self.trans(&exec) {
+            if let Err(e) = self.trans(&exec).await {
                 warn!("trans suffer {:?}\n{:#?}", e, self.vehicles);
             }
         }
@@ -330,7 +357,7 @@ mod tests {
     use super::*;
     use crate::mcs::{
         prelude::Side,
-        track::{NodeType, TrackGraphBuilder},
+        transport::track::{NodeType, TrackGraphBuilder},
     };
 
     #[test]
@@ -349,21 +376,21 @@ mod tests {
         //     },
         // }
         assert!(
-            Exec::TransItem {
+            Event::TransItem {
                 begin_node_name: "".to_string(),
                 end_node_name: "".to_string()
             }
             .contain_id(&2050)
         );
         assert!(
-            Exec::TransFluid {
+            Event::TransFluid {
                 begin_node_name: "".to_string(),
                 end_node_name: "".to_string()
             }
             .contain_id(&4050)
         );
         assert!(
-            Exec::TransTrolley {
+            Event::TransTrolley {
                 begin_node_name: "".to_string(),
                 end_node_name: "".to_string()
             }
@@ -372,7 +399,7 @@ mod tests {
 
         let tool_type = ToolType::Wrench;
         assert!(
-            Exec::UseTool {
+            Event::UseTool {
                 tool_type,
                 end_node_name: "".to_string()
             }
@@ -381,7 +408,7 @@ mod tests {
 
         let tool_type = ToolType::Solder;
         assert!(
-            Exec::UseTool {
+            Event::UseTool {
                 tool_type,
                 end_node_name: "".to_string()
             }
@@ -390,7 +417,7 @@ mod tests {
 
         let tool_type = ToolType::Crowbar;
         assert!(
-            Exec::UseTool {
+            Event::UseTool {
                 tool_type,
                 end_node_name: "".to_string()
             }
@@ -399,7 +426,7 @@ mod tests {
 
         let tool_type = ToolType::Screwdriver;
         assert!(
-            Exec::UseTool {
+            Event::UseTool {
                 tool_type,
                 end_node_name: "".to_string()
             }
@@ -408,7 +435,7 @@ mod tests {
 
         let tool_type = ToolType::WireNipper;
         assert!(
-            Exec::UseTool {
+            Event::UseTool {
                 tool_type,
                 end_node_name: "".to_string()
             }
@@ -417,7 +444,7 @@ mod tests {
 
         let tool_type = ToolType::SoftHammer;
         assert!(
-            Exec::UseTool {
+            Event::UseTool {
                 tool_type,
                 end_node_name: "".to_string()
             }
@@ -457,53 +484,87 @@ mod tests {
         let mut dispatch = DispatchExec::new(receiver, 0.1, track_graph);
 
         // Item
-        let action = dispatch.get_action(2500, (0.0, 0.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (0.0, 0.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(action.is_none());
         sender
-            .send(Exec::TransItem {
+            .send(Event::TransItem {
                 begin_node_name: "S2".to_string(),
                 end_node_name: "S1".to_string(),
             })
             .await
             .unwrap();
 
-        let action = dispatch.get_action(2500, (0.0, 0.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (0.0, 0.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A6"));
-        let action = dispatch.get_action(2500, (0.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (0.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "S2"));
-        let action = dispatch.get_action(2500, (-1.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (-1.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Suck(side) if side == Side::PosZ));
-        let action = dispatch.get_action(2500, (-1.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (-1.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A6"));
-        let action = dispatch.get_action(2500, (0.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (0.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A2"));
-        let action = dispatch.get_action(2500, (1.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (1.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A1"));
-        let action = dispatch.get_action(2500, (2.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (2.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A4"));
-        let action = dispatch.get_action(2500, (2.0, 2.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (2.0, 2.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A3"));
-        let action = dispatch.get_action(2500, (1.0, 2.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (1.0, 2.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "S1"));
-        let action = dispatch.get_action(2500, (1.0, 3.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (1.0, 3.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Drop(side) if side == Side::PosZ));
-        let action = dispatch.get_action(2500, (1.0, 3.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (1.0, 3.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A3"));
-        let action = dispatch.get_action(2500, (1.0, 2.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (1.0, 2.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A2"));
-        let action = dispatch.get_action(2500, (1.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (1.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A1"));
-        let action = dispatch.get_action(2500, (2.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (2.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "P1"));
-        let action = dispatch.get_action(2500, (2.0, 0.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(2500, (2.0, 0.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(action.is_none());
-        assert_eq!(dispatch.track_graph.get_lock_node().len(), 1);
+        assert_eq!(dispatch.track_graph.get_lock_node().await.len(), 1);
 
         // Trolly
-        let action = dispatch.get_action(6500, (2.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (2.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A4"));
         sender
-            .send(Exec::TransTrolley {
+            .send(Event::TransTrolley {
                 begin_node_name: "S1".to_string(),
                 end_node_name: "S2".to_string(),
             })
@@ -512,33 +573,57 @@ mod tests {
 
         println!("{:#?}", dispatch.vehicles.get(&6500).unwrap());
 
-        let action = dispatch.get_action(6500, (2.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (2.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A4"));
-        let action = dispatch.get_action(6500, (2.0, 2.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (2.0, 2.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A3"));
-        let action = dispatch.get_action(6500, (1.0, 2.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (1.0, 2.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "S1"));
-        let action = dispatch.get_action(6500, (1.0, 3.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (1.0, 3.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Use(side) if side == Side::PosZ));
-        let action = dispatch.get_action(6500, (1.0, 3.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (1.0, 3.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A3"));
-        let action = dispatch.get_action(6500, (1.0, 2.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (1.0, 2.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A5"));
-        let action = dispatch.get_action(6500, (0.0, 2.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (0.0, 2.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A6"));
-        let action = dispatch.get_action(6500, (0.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (0.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "S2"));
-        let action = dispatch.get_action(6500, (-1.0, 1.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (-1.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Use(side) if side == Side::PosZ));
 
-        assert_eq!(dispatch.track_graph.get_lock_node().len(), 1);
-        let action = dispatch.get_action(6500, (-1.0, 1.0, 0.0), 1.0, Some(1.0));
+        assert_eq!(dispatch.track_graph.get_lock_node().await.len(), 1);
+        let action = dispatch
+            .get_action(6500, (-1.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "A6"));
-        assert_eq!(dispatch.track_graph.get_lock_node().len(), 2);
-        let action = dispatch.get_action(6500, (0.0, 1.0, 0.0), 1.0, Some(1.0));
+        assert_eq!(dispatch.track_graph.get_lock_node().await.len(), 2);
+        let action = dispatch
+            .get_action(6500, (0.0, 1.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(matches!(action.unwrap(), Action::Move(node) if node.name() == "P2"));
-        let action = dispatch.get_action(6500, (0.0, 0.0, 0.0), 1.0, Some(1.0));
+        let action = dispatch
+            .get_action(6500, (0.0, 0.0, 0.0), 1.0, Some(1.0))
+            .await;
         assert!(action.is_none());
-        assert_eq!(dispatch.track_graph.get_lock_node().len(), 2);
+        assert_eq!(dispatch.track_graph.get_lock_node().await.len(), 2);
     }
 }

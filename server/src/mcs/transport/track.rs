@@ -1,20 +1,71 @@
-use super::{Position, Side, queue::PriorityQueue};
+use tokio::sync::RwLock;
+
+use crate::mcs::prelude::*;
 use core::panic;
 use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet, LinkedList},
+    collections::{BinaryHeap, HashMap, HashSet, LinkedList},
     fs::File,
-    rc::Rc,
+    sync::Arc,
 };
 
 #[derive(Debug)]
 pub enum Error {
-    NotFindNode,
-    NotFindAnyPath,
-    NotFindAnyNode,
+    Node,
+    AnyPath,
+    AnyNode,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+struct SortNode<T>(f64, T);
+impl<T> Eq for SortNode<T> {}
+impl<T> Ord for SortNode<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self.0 == other.0 {
+            std::cmp::Ordering::Equal
+        } else if self.0 < other.0 {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Less
+        }
+    }
+}
+
+impl<T> PartialOrd for SortNode<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> PartialEq for SortNode<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+pub struct PriorityQueue<T> {
+    container: BinaryHeap<SortNode<T>>,
+}
+
+impl<T> PriorityQueue<T> {
+    pub fn new() -> Self {
+        Self {
+            container: BinaryHeap::new(),
+        }
+    }
+
+    pub fn push(&mut self, priority: f64, item: T) {
+        self.container.push(SortNode(priority, item));
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        self.container.pop().map(|node| node.1)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.container.is_empty()
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub enum NodeType {
@@ -26,7 +77,7 @@ pub enum NodeType {
 
 impl From<Vec<&str>> for NodeType {
     fn from(value: Vec<&str>) -> Self {
-        match *value.get(0).expect("can not get node_type") {
+        match *value.first().expect("can not get node_type") {
             "stocker" => {
                 let side = *value.get(1).expect("can not get machine side");
                 Self::Stocker(side.into())
@@ -60,7 +111,7 @@ impl Node {
     }
 }
 
-pub type Path = Vec<Rc<Node>>;
+pub type Path = Vec<Arc<Node>>;
 
 #[derive(Debug)]
 enum EdgeState {
@@ -70,16 +121,16 @@ enum EdgeState {
 
 #[derive(Debug)]
 struct Edge {
-    from_node: Rc<Node>,
-    to_node: Rc<Node>,
+    from_node: Arc<Node>,
+    to_node: Arc<Node>,
     weight: f64,
-    state: RefCell<EdgeState>,
+    state: RwLock<EdgeState>,
 }
 
 #[derive(Debug)]
 pub struct TrackGraph {
-    edges: HashMap<String, Vec<Rc<Edge>>>,
-    nodes: HashMap<String, Rc<Node>>,
+    edges: HashMap<String, Vec<Arc<Edge>>>,
+    nodes: HashMap<String, Arc<Node>>,
 }
 
 fn heuristic_distance(from_position: &Position, to_position: &Position) -> f64 {
@@ -106,8 +157,12 @@ impl TrackGraph {
 
     fn add_node(&mut self, node: Node) {
         let node_name = node.name.clone();
-        if let Some(_) = self.nodes.insert(node_name.clone(), Rc::new(node)) {
-            assert!(false, "Same Node is forbidden")
+        if self
+            .nodes
+            .insert(node_name.clone(), Arc::new(node))
+            .is_some()
+        {
+            panic!("{} Node is forbidden", node_name);
         }
         self.edges.insert(node_name, Vec::new());
     }
@@ -115,60 +170,61 @@ impl TrackGraph {
     fn add_edge(&mut self, edge: Edge) {
         let from_node_name = &edge.from_node.name.clone();
 
-        let edge = Rc::new(edge);
+        let edge = Arc::new(edge);
         self.edges
             .get_mut(from_node_name)
             .unwrap()
             .push(edge.clone());
     }
 
-    pub fn node(&self, name: &String) -> Option<Rc<Node>> {
+    pub fn node(&self, name: &String) -> Option<Arc<Node>> {
         self.nodes.get(name).cloned()
     }
 
-    pub fn lock_node(&self, node_name: &str) {
-        self.edges
+    pub async fn lock_node(&self, node_name: &str) {
+        for edge in self
+            .edges
             .iter()
             .flat_map(|(_, edges)| edges.iter())
             .filter(|edge| edge.to_node.name == node_name)
-            .for_each(|edge| *edge.state.borrow_mut() = EdgeState::Lock);
+        {
+            *edge.state.write().await = EdgeState::Lock;
+        }
     }
 
-    pub fn unlock_node(&self, node_name: &str) {
-        self.edges
+    pub async fn unlock_node(&self, node_name: &str) {
+        for edge in self
+            .edges
             .iter()
             .flat_map(|(_, edges)| edges.iter())
             .filter(|edge| edge.to_node.name == node_name)
-            .for_each(|edge| *edge.state.borrow_mut() = EdgeState::UnLock);
+        {
+            *edge.state.write().await = EdgeState::UnLock;
+        }
     }
 
-    pub fn get_lock_node(&self) -> HashSet<String> {
+    pub async fn get_lock_node(&self) -> HashSet<String> {
         let mut result: HashSet<String> = HashSet::new();
-        self.edges
-            .iter()
-            .flat_map(|(_, edges)| edges.iter())
-            .filter(|edge| match *edge.state.borrow() {
-                EdgeState::Lock => true,
-                EdgeState::UnLock => false,
-            })
-            .for_each(|edge| {
+        for edge in self.edges.iter().flat_map(|(_, edges)| edges.iter()) {
+            if let EdgeState::Lock = *edge.state.read().await {
                 result.insert(edge.to_node.name.to_string());
-            });
+            }
+        }
         result
     }
 
-    fn a_star(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path> {
-        let mut open_node: PriorityQueue<Rc<Node>> = PriorityQueue::new();
+    async fn a_star(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path> {
+        let mut open_node: PriorityQueue<Arc<Node>> = PriorityQueue::new();
         let mut close_node: HashSet<String> = HashSet::new();
-        let mut came_from: HashMap<String, Rc<Node>> = HashMap::new();
+        let mut came_from: HashMap<String, Arc<Node>> = HashMap::new();
         let mut g_score: HashMap<String, f64> = HashMap::new();
         for (name, _) in self.nodes.iter() {
             g_score.insert(name.clone(), f64::MAX);
         }
         g_score.insert(begin_node_name.to_string(), 0.0);
 
-        let begin_node = self.nodes.get(begin_node_name).ok_or(Error::NotFindNode)?;
-        let end_node = self.nodes.get(end_node_name).ok_or(Error::NotFindNode)?;
+        let begin_node = self.nodes.get(begin_node_name).ok_or(Error::Node)?;
+        let end_node = self.nodes.get(end_node_name).ok_or(Error::Node)?;
 
         open_node.push(
             heuristic_distance(begin_node.position(), end_node.position()),
@@ -177,7 +233,7 @@ impl TrackGraph {
 
         while let Some(current_node) = open_node.pop() {
             if current_node.name == end_node_name {
-                let mut result: LinkedList<Rc<Node>> = LinkedList::new();
+                let mut result: LinkedList<Arc<Node>> = LinkedList::new();
                 result.push_back(current_node.clone());
 
                 let mut current_node_name = current_node.name.clone();
@@ -192,7 +248,7 @@ impl TrackGraph {
 
             let edges = self.edges.get(current_node.name.as_str()).unwrap();
             for edge in edges {
-                if let EdgeState::Lock = *edge.state.borrow() {
+                if let EdgeState::Lock = *edge.state.read().await {
                     continue;
                 }
 
@@ -215,26 +271,26 @@ impl TrackGraph {
             }
         }
 
-        Err(Error::NotFindAnyPath)
+        Err(Error::AnyPath)
     }
 
-    fn dijkstra(&self, begin_node_name: &str, node_type: &NodeType) -> Result<Path> {
-        let mut open_node: PriorityQueue<Rc<Node>> = PriorityQueue::new();
+    async fn dijkstra(&self, begin_node_name: &str, node_type: &NodeType) -> Result<Path> {
+        let mut open_node: PriorityQueue<Arc<Node>> = PriorityQueue::new();
         let mut close_node: HashSet<String> = HashSet::new();
-        let mut came_from: HashMap<String, Rc<Node>> = HashMap::new();
+        let mut came_from: HashMap<String, Arc<Node>> = HashMap::new();
         let mut g_score: HashMap<String, f64> = HashMap::new();
         for (name, _) in self.nodes.iter() {
             g_score.insert(name.clone(), f64::MAX);
         }
         g_score.insert(begin_node_name.to_string(), 0.0);
 
-        let begin_node = self.nodes.get(begin_node_name).ok_or(Error::NotFindNode)?;
+        let begin_node = self.nodes.get(begin_node_name).ok_or(Error::Node)?;
 
         open_node.push(0.0, begin_node.clone());
 
         while let Some(current_node) = open_node.pop() {
             if current_node.node_type == *node_type {
-                let mut result: LinkedList<Rc<Node>> = LinkedList::new();
+                let mut result: LinkedList<Arc<Node>> = LinkedList::new();
                 result.push_back(current_node.clone());
 
                 let mut current_node_name = current_node.name.clone();
@@ -248,7 +304,7 @@ impl TrackGraph {
             close_node.insert(current_node.name.clone());
 
             for edge in self.edges.get(current_node.name()).unwrap() {
-                if let EdgeState::Lock = *edge.state.borrow() {
+                if let EdgeState::Lock = *edge.state.read().await {
                     continue;
                 }
 
@@ -269,36 +325,41 @@ impl TrackGraph {
             }
         }
 
-        Err(Error::NotFindAnyPath)
+        Err(Error::AnyPath)
     }
 
-    pub fn find_path(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path> {
-        self.a_star(begin_node_name, end_node_name)
+    pub async fn find_path(&self, begin_node_name: &str, end_node_name: &str) -> Result<Path> {
+        self.a_star(begin_node_name, end_node_name).await
     }
 
-    pub fn find_shortest_node(&self, position: &Position) -> Result<Rc<Node>> {
-        let mut nodes: Vec<(Rc<Node>, f64)> = Vec::new();
-        nodes.reserve(self.nodes.len());
+    pub fn find_shortest_node(&self, position: &Position) -> Result<Arc<Node>> {
+        let mut nodes: Vec<(Arc<Node>, f64)> = Vec::with_capacity(self.nodes.len());
         self.nodes.iter().for_each(|(_, to_node)| {
             nodes.push((
                 to_node.clone(),
-                heuristic_distance(&position, to_node.position()),
+                heuristic_distance(position, to_node.position()),
             ));
         });
         nodes.sort_by(|a, b| a.1.total_cmp(&b.1));
-        Ok(nodes.get(0).ok_or(Error::NotFindAnyNode)?.0.clone())
+        Ok(nodes.first().ok_or(Error::AnyNode)?.0.clone())
     }
 
-    pub fn find_path_by_type(&self, from_node_name: &str, node_type: NodeType) -> Result<Path> {
-        self.dijkstra(from_node_name, &node_type)
+    pub async fn find_path_by_type(
+        &self,
+        from_node_name: &str,
+        node_type: NodeType,
+    ) -> Result<Path> {
+        self.dijkstra(from_node_name, &node_type).await
     }
 
-    pub fn find_parking_path(&self, from_node_name: &str) -> Result<Path> {
+    pub async fn find_parking_path(&self, from_node_name: &str) -> Result<Path> {
         self.find_path_by_type(from_node_name, NodeType::ParkingStation)
+            .await
     }
 
-    pub fn find_charging_path(&self, from_node_name: &str) -> Result<Path> {
+    pub async fn find_charging_path(&self, from_node_name: &str) -> Result<Path> {
         self.find_path_by_type(from_node_name, NodeType::ChargingStation)
+            .await
     }
 }
 
@@ -319,8 +380,7 @@ impl TrackGraphBuilder {
 
         let mut track_graph = TrackGraph::new();
 
-        let _add_nodes = json
-            .get("nodes")
+        json.get("nodes")
             .unwrap()
             .as_object()
             .unwrap()
@@ -329,7 +389,7 @@ impl TrackGraphBuilder {
                 let value = value.as_str().unwrap().to_string();
                 let mut value_split: Vec<&str> = value.split(' ').collect();
                 let x: f64 = value_split
-                    .get(0)
+                    .first()
                     .expect("can not get X string")
                     .parse()
                     .expect("can not parse X");
@@ -351,8 +411,7 @@ impl TrackGraphBuilder {
                     node_type,
                 });
             });
-        let _add_edges = json
-            .get("edges")
+        json.get("edges")
             .unwrap()
             .as_array()
             .unwrap()
@@ -360,7 +419,7 @@ impl TrackGraphBuilder {
             .for_each(|value| {
                 let value = value.as_str().unwrap().to_string();
                 let value_split: Vec<&str> = value.split('-').collect();
-                let from_node_name = value_split.get(0).expect("can not get from_node_name");
+                let from_node_name = value_split.first().expect("can not get from_node_name");
                 let to_node_name = value_split.get(1).expect("can not get to_node_name");
 
                 let from_node = track_graph.nodes.get(*from_node_name).unwrap();
@@ -371,7 +430,7 @@ impl TrackGraphBuilder {
                     from_node: track_graph.nodes.get(*from_node_name).unwrap().clone(),
                     to_node: track_graph.nodes.get(*to_node_name).unwrap().clone(),
                     weight,
-                    state: RefCell::new(EdgeState::UnLock),
+                    state: RwLock::new(EdgeState::UnLock),
                 };
                 track_graph.add_edge(edge);
             });
@@ -399,19 +458,19 @@ impl TrackGraphBuilder {
             .track_graph
             .nodes
             .get(from_node_name)
-            .expect(format!("No such Node {}, Please check!", from_node_name).as_str());
+            .unwrap_or_else(|| panic!("No such Node {}, Please check!", from_node_name));
         let to_node = self
             .track_graph
             .nodes
             .get(to_node_name)
-            .expect(format!("No such Node {}, Please check!", from_node_name).as_str());
+            .unwrap_or_else(|| panic!("No such Node {}, Please check!", from_node_name));
         let weight = heuristic_distance(&from_node.position, &to_node.position);
 
         let edge = Edge {
             from_node: from_node.clone(),
             to_node: to_node.clone(),
             weight,
-            state: RefCell::new(EdgeState::UnLock),
+            state: RwLock::new(EdgeState::UnLock),
         };
 
         self.track_graph.add_edge(edge);
@@ -477,41 +536,41 @@ mod test {
         assert_eq!(edge.to_node.name, "B");
     }
 
-    #[test]
-    fn a_star() {
+    #[tokio::test]
+    async fn a_star() {
         let track_graph = get_grack_graph();
         let mut path: Vec<String> = Vec::new();
-        let result = track_graph.a_star("A4", "P1").unwrap();
+        let result = track_graph.a_star("A4", "P1").await.unwrap();
         for node in result {
             path.push(node.name.clone());
         }
         assert_eq!(path, ["A4", "A3", "A2", "A1", "P1"]);
     }
 
-    #[test]
-    fn find_parking_charging_path() {
+    #[tokio::test]
+    async fn find_parking_charging_path() {
         let track_graph = get_grack_graph();
 
         let mut path: Vec<String> = Vec::new();
-        let result = track_graph.find_parking_path("A4").unwrap();
+        let result = track_graph.find_parking_path("A4").await.unwrap();
         for node in result {
             path.push(node.name.clone());
         }
         assert_eq!(path, ["A4", "A3", "A2", "A1", "P1"]);
 
         let mut path: Vec<String> = Vec::new();
-        let result = track_graph.find_charging_path("A4").unwrap();
+        let result = track_graph.find_charging_path("A4").await.unwrap();
         for node in result {
             path.push(node.name.clone());
         }
         assert_eq!(path, ["A4", "A3", "A2", "C1"]);
     }
 
-    #[test]
-    fn load_json() {
+    #[tokio::test]
+    async fn load_json() {
         let track_graph = TrackGraphBuilder::from_json("./tests/oht_trackgraph.json").build();
         let mut path: Vec<String> = Vec::new();
-        let result = track_graph.find_path("A", "F").unwrap();
+        let result = track_graph.find_path("A", "F").await.unwrap();
         for node in result {
             path.push(node.name.clone());
         }

@@ -1,4 +1,3 @@
-use jsonrpsee::{RpcModule, server::Server};
 use sqlx::postgres::PgPoolOptions;
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, prelude::*};
@@ -39,12 +38,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("Failed to create pool");
     info!("Database pool created successfully");
-
-    let server = Server::builder().build("0.0.0.0:5000").await?;
-    let module = RpcModule::new(());
-    // module.register_method(, callback)
-    let handle = server.start(module);
-    tokio::spawn(handle.stopped()).await.unwrap();
 
     Ok(())
 }
