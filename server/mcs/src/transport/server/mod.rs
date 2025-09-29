@@ -1,6 +1,6 @@
 use tokio::net::ToSocketAddrs;
 
-use crate::mcs::transport::DispatchExec;
+use crate::transport::DispatchExec;
 
 pub struct Server {
     server: jsonrpsee::server::Server,
@@ -24,7 +24,7 @@ impl ServerBuilder {
         Self { module }
     }
 
-    pub fn register(&mut self) -> &mut jsonrpsee::RpcModule<DispatchExec>{
+    pub fn register(&mut self) -> &mut jsonrpsee::RpcModule<DispatchExec> {
         &mut self.module
     }
 
@@ -32,15 +32,23 @@ impl ServerBuilder {
         let server = jsonrpsee::server::ServerBuilder::new().build(addr).await?;
         Ok(Server {
             server,
-            module: self.module
+            module: self.module,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use tokio::sync::mpsc;
+
+    use crate::transport::{TrackGraph, track::TrackGraphBuilder};
+
+    use super::*;
     #[tokio::test]
     async fn jsonrpc_server() {
-
+        let track_graph = TrackGraphBuilder::new().build();
+        let (sender, receiver) = mpsc::channel(20);
+        let dispatch_exec = DispatchExec::new(receiver, 0.1, track_graph);
+        let server = ServerBuilder::new(dispatch_exec.await).build("0.0.0.0:5000");
     }
 }

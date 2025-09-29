@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tokio::time;
 
-use crate::mcs::transport::dispatch;
+use crate::transport::dispatch;
 
 pub struct PingPong {
     sender: mpsc::Sender<dispatch::Event>,

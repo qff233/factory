@@ -1,6 +1,6 @@
 use tokio::sync::RwLock;
 
-use crate::mcs::prelude::*;
+use crate::transport::prelude::*;
 use core::panic;
 use std::{
     collections::{BinaryHeap, HashMap, HashSet, LinkedList},
@@ -72,6 +72,7 @@ pub enum NodeType {
     Fork,
     ChargingStation,
     ParkingStation,
+    ShippingDock(Side),
     Stocker(Side),
 }
 
@@ -106,6 +107,7 @@ impl Node {
     pub fn side(&self) -> Option<&Side> {
         match &self.node_type {
             NodeType::Stocker(side) => Some(side),
+            NodeType::ShippingDock(side) => Some(side),
             _ => None,
         }
     }
@@ -289,7 +291,8 @@ impl TrackGraph {
         open_node.push(0.0, begin_node.clone());
 
         while let Some(current_node) = open_node.pop() {
-            if current_node.node_type == *node_type {
+            if std::mem::discriminant(&current_node.node_type) == std::mem::discriminant(node_type) {
+            // if current_node.node_type == *node_type {
                 let mut result: LinkedList<Arc<Node>> = LinkedList::new();
                 result.push_back(current_node.clone());
 
@@ -359,6 +362,11 @@ impl TrackGraph {
 
     pub async fn find_charging_path(&self, from_node_name: &str) -> Result<Path> {
         self.find_path_by_type(from_node_name, NodeType::ChargingStation)
+            .await
+    }
+
+    pub async fn find_shipping_dock_path(&self, from_node_name: &str) -> Result<Path> {
+        self.find_path_by_type(from_node_name, NodeType::ShippingDock(Side::NegX))
             .await
     }
 }

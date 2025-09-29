@@ -5,13 +5,14 @@ use tracing::error;
 
 use super::track;
 use super::track::TrackGraph;
-use crate::mcs::Position;
-use crate::mcs::Side;
+use crate::constant;
+use crate::transport::prelude::*;
 
 #[derive(Debug)]
 pub enum Error {
-    StateError,
-    FindPathError,
+    State,
+    FindPath,
+    NodeSide,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -115,18 +116,87 @@ enum State {
     Processing(ActionSequence),
 }
 
+#[derive(Debug, Clone)]
+pub enum ToolType {
+    Wrench,      // 扳手
+    Solder,      // 烙铁
+    Crowbar,     // 撬棍
+    Screwdriver, // 螺丝刀
+    WireNipper,  // 剪线钳
+    SoftHammer,  // 软锤
+}
+
+#[derive(Debug)]
+enum Skill {
+    Item,
+    Fluid,
+    UseTool(ToolType),
+}
+
+impl Skill {
+    fn from_id(id: &u32) -> Self {
+        if constant::ITEM_VEHICLE_ID_RANGE.contains(id) {
+            return Self::Item;
+        }
+        if constant::FLUID_VEHICLE_ID_RANGE.contains(id) {
+            return Self::Fluid;
+        }
+        if constant::USE_TOOL_WRENCH_VEHICLE_ID_RANGE.contains(id) {
+            return Self::UseTool(ToolType::Wrench);
+        }
+        if constant::USE_TOOL_SOLDER_VEHICLE_ID_RANGE.contains(id) {
+            return Self::UseTool(ToolType::Solder);
+        }
+        if constant::USE_TOOL_CROWBAR_VEHICLE_ID_RANGE.contains(id) {
+            return Self::UseTool(ToolType::Crowbar);
+        }
+        if constant::USE_TOOL_SCREWDRIVER_VEHICLE_ID_RANGE.contains(id) {
+            return Self::UseTool(ToolType::Screwdriver);
+        }
+        if constant::USE_TOOL_WIRENIPPER_VEHICLE_ID_RANGE.contains(id) {
+            return Self::UseTool(ToolType::WireNipper);
+        }
+        if constant::USE_TOOL_SOFT_HAMMER_VEHICLE_ID_RANGE.contains(id) {
+            return Self::UseTool(ToolType::SoftHammer);
+        }
+        panic!("id: {}, can not have any skill.", id);
+    }
+
+    fn contain_id(&self, id: &u32) -> bool {
+        match self {
+            Skill::Item => constant::ITEM_VEHICLE_ID_RANGE.contains(id),
+            Skill::Fluid => constant::FLUID_VEHICLE_ID_RANGE.contains(id),
+            Skill::UseTool(tool_type) => match tool_type {
+                ToolType::Wrench => constant::USE_TOOL_WRENCH_VEHICLE_ID_RANGE.contains(id),
+                ToolType::Solder => constant::USE_TOOL_SOLDER_VEHICLE_ID_RANGE.contains(id),
+                ToolType::Crowbar => constant::USE_TOOL_CROWBAR_VEHICLE_ID_RANGE.contains(id),
+                ToolType::Screwdriver => {
+                    constant::USE_TOOL_SCREWDRIVER_VEHICLE_ID_RANGE.contains(id)
+                }
+                ToolType::WireNipper => constant::USE_TOOL_WIRENIPPER_VEHICLE_ID_RANGE.contains(id),
+                ToolType::SoftHammer => {
+                    constant::USE_TOOL_SOFT_HAMMER_VEHICLE_ID_RANGE.contains(id)
+                }
+            },
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Vehicle {
     id: u32,
     state: State,
+    skill: Skill,
     node: Option<Arc<track::Node>>,
 }
 
 impl Vehicle {
     pub fn new(id: u32) -> Self {
+        let skill = Skill::from_id(&id);
         Self {
             id,
             state: State::Offline,
+            skill,
             node: None,
         }
     }
@@ -135,17 +205,52 @@ impl Vehicle {
         self.state = State::Offline;
     }
 
-    pub fn inline(&mut self, current_position: &Position, track_graph: &TrackGraph) {
-        if let State::Offline = self.state {
-            match track_graph.find_shortest_node(current_position) {
-                Ok(node) => {
-                    let actions = ActionSequenceBuilder::new().move_to(node.clone()).build();
-                    self.node = Some(node);
-                    self.state = State::Initing(actions);
+    pub async fn initing(
+        &mut self,
+        current_position: &Position,
+        track_graph: &TrackGraph,
+    ) -> Result<()> {
+        assert!(matches!(self.state, State::Offline));
+        match track_graph.find_shortest_node(current_position) {
+            Ok(shortest_node) => {
+                let shortest_node_to_shipping_dock_path = track_graph
+                    .find_shipping_dock_path(shortest_node.name())
+                    .await
+                    .map_err(|e| {
+                        error!("{} suffer {:?}", self.id, e);
+                        Error::FindPath
+                    })?;
+                let mut actions = ActionSequenceBuilder::new()
+                    .move_to(shortest_node.clone())
+                    .move_path(&shortest_node_to_shipping_dock_path);
+                match self.skill {
+                    Skill::Item => {
+                        actions = actions.drop(
+                            shortest_node_to_shipping_dock_path
+                                .last()
+                                .unwrap()
+                                .side()
+                                .ok_or(Error::NodeSide)?,
+                        );
+                    }
+                    Skill::Fluid => {
+                        actions = actions.fill(
+                            shortest_node_to_shipping_dock_path
+                                .last()
+                                .unwrap()
+                                .side()
+                                .ok_or(Error::NodeSide)?,
+                        );
+                    }
+                    _ => (),
                 }
-                Err(_) => error!("{} can't find shortest node.", self.id),
+                self.state = State::Initing(actions.build());
+            }
+            Err(_) => {
+                error!("{} can't find shortest node.", self.id);
             }
         }
+        Ok(())
     }
 
     pub fn node(&self) -> Option<Arc<track::Node>> {
@@ -215,10 +320,10 @@ impl Vehicle {
                         self.state = State::Parking(actions);
                         Ok(())
                     }
-                    None => Err(Error::FindPathError),
+                    None => Err(Error::FindPath),
                 }
             }
-            _ => Err(Error::StateError),
+            _ => Err(Error::State),
         }
     }
 
@@ -252,7 +357,7 @@ impl Vehicle {
 
                 Ok(())
             }
-            _ => Err(Error::StateError),
+            _ => Err(Error::State),
         }
     }
 
@@ -322,7 +427,9 @@ impl Vehicle {
                         return None;
                     }
                 }
-                State::Offline => unreachable!(),
+                State::Offline => {
+                    self.initing(current_position, track_graph);
+                }
             }
         }
     }
@@ -348,7 +455,7 @@ impl Vehicle {
                 Ok(())
             }
             State::Initing(_) | State::Processing(_) | State::Charging(_) | State::Offline => {
-                Err(Error::StateError)
+                Err(Error::State)
             }
         }
     }
@@ -361,6 +468,7 @@ mod tests {
 
     fn get_tarck_graph() -> track::TrackGraph {
         track::TrackGraphBuilder::new()
+            .node("S1", (2.0, 3.0, 0.0), NodeType::ShippingDock(Side::PosZ))
             .node("P2", (0.0, 0.0, 0.0), NodeType::ParkingStation)
             .node("C1", (1.0, 0.0, 0.0), NodeType::ChargingStation)
             .node("P1", (2.0, 0.0, 0.0), NodeType::ParkingStation)
@@ -373,6 +481,7 @@ mod tests {
             .edge_double("P2", "A6")
             .edge_double("C1", "A2")
             .edge_double("P1", "A1")
+            .edge_double("S1", "A4")
             .edge("A6", "A2")
             .edge("A2", "A1")
             .edge("A1", "A4")
@@ -387,9 +496,12 @@ mod tests {
     async fn init() {
         let track_graph = get_tarck_graph();
 
-        let mut vehicle = Vehicle::new(1000);
+        let mut vehicle = Vehicle::new(2000);
         let current_position = (8.0, 8.0, 0.0).into();
-        vehicle.inline(&current_position, &track_graph);
+        vehicle
+            .initing(&current_position, &track_graph)
+            .await
+            .unwrap();
 
         // move to shortest node
         if let State::Initing(_) = vehicle.state {
@@ -397,84 +509,52 @@ mod tests {
             assert!(false)
         }
 
+        // move to S1 Shipping dock
+        assert!(
+            matches!(vehicle.get_action(&(2.0, 4.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "S1")
+        );
         // move to shortest node   action
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "A4");
-        } else {
-            assert!(false)
-        }
+        assert!(matches!(
+            vehicle
+                .get_action(&(2.0, 3.0, 0.0).into(), 1.0, &track_graph)
+                .await
+                .unwrap(),
+            Action::Drop(Side::PosZ)
+        ));
 
         // yet to A4, still action move to A4
-        let current_position = (6.0, 0.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "A4");
-        }
+        assert!(
+            matches!(vehicle.get_action(&(2.0, 3.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "A4")
+        );
 
-        if let State::Initing(_) = vehicle.state {
-        } else {
-            assert!(false)
-        }
+        assert!(matches!(vehicle.state, State::Parking(_)));
 
         // arrive A4, action move to A3
-        let current_position = (2.0, 2.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "A3");
-        }
-
+        assert!(
+            matches!(vehicle.get_action(&(2.0, 2.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "A3")
+        );
         // arrive A3, action move to A2
-        let current_position = (1.0, 2.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "A2");
-        }
-
+        assert!(
+            matches!(vehicle.get_action(&(1.0, 2.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "A2")
+        );
         // arrive A2, action move to A1
-        let current_position = (1.0, 1.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "A1");
-        }
+        assert!(
+            matches!(vehicle.get_action(&(1.0, 1.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "A1")
+        );
 
         // arrive A1, action move to P1
-        let current_position = (2.0, 1.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "P1");
-        }
+        assert!(
+            matches!(vehicle.get_action(&(2.0, 1.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "P1")
+        );
 
         // arrive P1, check state
-        let current_position = (2.0, 0.0, 0.0).into();
         assert!(
             vehicle
-                .get_action(&current_position, 1.0, &track_graph)
+                .get_action(&(2.0, 0.0, 0.0).into(), 1.0, &track_graph)
                 .await
                 .is_none()
         );
-        if let State::ParkDone = vehicle.state {
-        } else {
-            assert!(false)
-        }
+        assert!(matches!(vehicle.state, State::ParkDone));
 
         // Check P1 locked
         assert!(track_graph.get_lock_node().await.contains("P1"));
@@ -484,89 +564,84 @@ mod tests {
     async fn auto_charging() {
         let track_graph = get_tarck_graph();
 
-        let mut vehicle = Vehicle::new(1000);
+        let mut vehicle = Vehicle::new(2000);
 
-        let current_position = (2.0, 2.0, 0.0).into();
-        vehicle.inline(&current_position, &track_graph);
+        vehicle
+            .initing(&(2.0, 2.0, 0.0).into(), &track_graph)
+            .await
+            .unwrap();
 
-        vehicle.get_action(&current_position, 0.1, &track_graph).await;
-        if let State::Charging(_) = vehicle.state {
-        } else {
-            assert!(false)
-        }
+        assert!(matches!(vehicle
+            .get_action(&(2.0, 2.0, 0.0).into(), 0.1, &track_graph)
+            .await.unwrap(), Action::Move(node) if node.name() == "S1"));
+        assert!(matches!(vehicle.state, State::Initing(_)));
+
+        assert!(matches!(
+            vehicle
+                .get_action(&(2.0, 3.0, 0.0).into(), 0.8, &track_graph)
+                .await
+                .unwrap(),
+            Action::Drop(_)
+        ));
+
+        vehicle
+            .get_action(&(2.0, 3.0, 0.0).into(), 0.8, &track_graph)
+            .await;
+        assert!(matches!(vehicle.state, State::Parking(_)));
+
+        vehicle
+            .get_action(&(2.0, 2.0, 0.0).into(), 0.1, &track_graph)
+            .await;
+        assert!(matches!(vehicle.state, State::Charging(_)));
         assert_eq!(track_graph.get_lock_node().await.len(), 1);
         assert!(track_graph.get_lock_node().await.contains("C1"));
 
         // arrive A3, action move to A2
-        let current_position = (1.0, 2.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 0.2, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "A2");
-        }
+        assert!(
+            matches!(vehicle.get_action(&(1.0, 2.0, 0.0).into(), 0.2, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "A2")
+        );
         assert_eq!(track_graph.get_lock_node().await.len(), 1);
         assert!(track_graph.get_lock_node().await.contains("C1"));
 
         // arrive A2, action move to C1
-        let current_position = (1.0, 1.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 0.2, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "C1");
-        }
+        assert!(
+            matches!(vehicle.get_action(&(1.0, 1.0, 0.0).into(), 0.2, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "C1")
+        );
         assert_eq!(track_graph.get_lock_node().await.len(), 1);
         assert!(track_graph.get_lock_node().await.contains("C1"));
 
         // charge over
-        let current_position = (1.0, 0.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "A2");
-        }
+        assert!(
+            matches!(vehicle.get_action(&(1.0, 0.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "A2")
+        );
         assert_eq!(track_graph.get_lock_node().await.len(), 1);
         assert!(track_graph.get_lock_node().await.contains("P1"));
 
         // arrive A2, action move to A1
-        let current_position = (1.0, 1.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "A1");
-        }
+        assert!(
+            matches!(vehicle.get_action(&(1.0, 1.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "A1")
+        );
         assert_eq!(track_graph.get_lock_node().await.len(), 1);
         assert!(track_graph.get_lock_node().await.contains("P1"));
 
         println!("{:#?} \n {:#?}", vehicle, track_graph.get_lock_node().await);
         // arrive A1, action move to P1
-        let current_position = (2.0, 1.0, 0.0).into();
-        if let Action::Move(node) = vehicle
-            .get_action(&current_position, 1.0, &track_graph)
-            .await
-            .unwrap()
-        {
-            assert_eq!(node.name(), "P1");
-        }
+        assert!(
+            matches!(vehicle.get_action(&(2.0, 1.0, 0.0).into(), 1.0, &track_graph).await.unwrap(), Action::Move(node) if node.name() == "P1")
+        );
         assert_eq!(track_graph.get_lock_node().await.len(), 1);
         assert!(track_graph.get_lock_node().await.contains("P1"));
 
         // arrive P1
-        let current_position = (2.0, 0.0, 0.0).into();
-        vehicle.get_action(&current_position, 1.0, &track_graph).await;
+        assert!(
+            vehicle
+                .get_action(&(2.0, 0.0, 0.0).into(), 1.0, &track_graph)
+                .await
+                .is_none()
+        );
         assert!(track_graph.get_lock_node().await.contains("P1"));
 
-        if let State::ParkDone = vehicle.state {
-        } else {
-            assert!(false)
-        }
+        assert!(matches!(vehicle.state, State::ParkDone));
         assert!(track_graph.get_lock_node().await.contains("P1"));
     }
 }

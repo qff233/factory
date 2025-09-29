@@ -3,6 +3,7 @@ mod ping;
 mod server;
 mod vehicle;
 mod track;
+pub mod prelude;
 
 use tokio::sync::mpsc;
 
