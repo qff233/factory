@@ -205,7 +205,7 @@ impl TrackGraph {
         }
     }
 
-    pub async fn get_lock_node(&self) -> HashSet<String> {
+    pub async fn get_lock_nodes(&self) -> HashSet<String> {
         let mut result: HashSet<String> = HashSet::new();
         for edge in self.edges.iter().flat_map(|(_, edges)| edges.iter()) {
             if let EdgeState::Lock = *edge.state.read().await {
@@ -291,8 +291,9 @@ impl TrackGraph {
         open_node.push(0.0, begin_node.clone());
 
         while let Some(current_node) = open_node.pop() {
-            if std::mem::discriminant(&current_node.node_type) == std::mem::discriminant(node_type) {
-            // if current_node.node_type == *node_type {
+            if std::mem::discriminant(&current_node.node_type) == std::mem::discriminant(node_type)
+            {
+                // if current_node.node_type == *node_type {
                 let mut result: LinkedList<Arc<Node>> = LinkedList::new();
                 result.push_back(current_node.clone());
 
@@ -546,13 +547,39 @@ mod test {
 
     #[tokio::test]
     async fn a_star() {
-        let track_graph = get_grack_graph();
+        let track_graph = TrackGraphBuilder::new()
+            .node("P2", (0.0, 0.0, 0.0), NodeType::ParkingStation)
+            .node("C1", (1.0, 0.0, 0.0), NodeType::ChargingStation)
+            .node("P1", (2.0, 0.0, 0.0), NodeType::ParkingStation)
+            .node("S3", (-1.0, 0.0, 0.0), NodeType::ShippingDock(Side::PosZ))
+            .node("A1", (2.0, 1.0, 0.0), NodeType::Fork)
+            .node("A2", (1.0, 1.0, 0.0), NodeType::Fork)
+            .node("A3", (1.0, 2.0, 0.0), NodeType::Fork)
+            .node("A4", (2.0, 2.0, 0.0), NodeType::Fork)
+            .node("A5", (0.0, 2.0, 0.0), NodeType::Fork)
+            .node("A6", (0.0, 1.0, 0.0), NodeType::Fork)
+            .node("S1", (1.0, 3.0, 0.0), NodeType::Stocker(Side::PosZ))
+            .node("S2", (-1.0, 1.0, 0.0), NodeType::Stocker(Side::PosZ))
+            .edge_double("P2", "A6")
+            .edge_double("C1", "A2")
+            .edge_double("P1", "A1")
+            .edge_double("S1", "A3")
+            .edge_double("S2", "A6")
+            .edge_double("S3", "P2")
+            .edge("A6", "A2")
+            .edge("A2", "A1")
+            .edge("A1", "A4")
+            .edge("A4", "A3")
+            .edge("A3", "A2")
+            .edge("A3", "A5")
+            .edge("A5", "A6")
+            .build();
         let mut path: Vec<String> = Vec::new();
-        let result = track_graph.a_star("A4", "P1").await.unwrap();
+        let result = track_graph.a_star("S3", "S2").await.unwrap();
         for node in result {
             path.push(node.name.clone());
         }
-        assert_eq!(path, ["A4", "A3", "A2", "A1", "P1"]);
+        assert_eq!(path, ["S3", "P2", "A6", "S2"]);
     }
 
     #[tokio::test]

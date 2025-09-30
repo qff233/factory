@@ -1,0 +1,257 @@
+use std::{collections::HashMap, sync::Arc};
+
+use tokio::{
+    sync::RwLock,
+    time::{self},
+};
+
+use crate::{
+    constant,
+    transport::{
+        TrackGraph,
+        prelude::Side,
+        schedule::{Error, Result, Task, TaskList},
+        track,
+        vehicle::{ActionSequence, ActionSequenceBuilder, Skill, ToolType, Vehicle},
+    },
+};
+
+#[derive(Debug)]
+pub struct ActionPlanner {
+    vehicles: Arc<RwLock<HashMap<u32, Vehicle>>>,
+    track_graph: Arc<TrackGraph>,
+    pending_tasks: Arc<RwLock<TaskList>>,
+}
+
+impl ActionPlanner {
+    pub fn new(
+        vehicles: Arc<RwLock<HashMap<u32, Vehicle>>>,
+        track_graph: Arc<TrackGraph>,
+        pending_tasks: Arc<RwLock<TaskList>>,
+    ) -> () {
+        let planner = Self {
+            vehicles,
+            track_graph,
+            pending_tasks,
+        };
+        tokio::spawn(async move { planner.task().await });
+    }
+
+    async fn task(mut self) {
+        let mut interval =
+            time::interval(time::Duration::from_secs(constant::VEHICLE_SCHEDULE_TIME));
+        loop {
+            interval.tick().await;
+            self.plan().await;
+        }
+    }
+
+    async fn find_idle_vehicle_shortest_path_by_skill(
+        &self,
+        to: &str,
+        skill: Skill,
+    ) -> Option<(u32, track::Path)> {
+        let mut result: Vec<(u32, track::Path)> = Vec::new();
+        for (id, vehicle) in self.vehicles.read().await.iter() {
+            if skill != *vehicle.skill() || !vehicle.idle().await {
+                continue;
+            }
+
+            if let Ok(path) = self.track_graph.find_path(vehicle.node()?.name(), to).await {
+                result.push((*id, path));
+            }
+        }
+        result.sort_by(|a, b| a.1.len().cmp(&b.1.len()));
+        result.first().cloned()
+    }
+
+    fn node_side(&self, node_name: &String) -> Result<Side> {
+        Ok(self
+            .track_graph
+            .node(node_name)
+            .ok_or(Error::NodeFind)?
+            .side()
+            .ok_or(Error::NodeFind)?
+            .clone())
+    }
+
+    async fn trans_item_actions(
+        &self,
+        begin_node_name: &String,
+        end_node_name: &String,
+    ) -> Result<(u32, ActionSequence)> {
+        let (id, to_begin_path) = self
+            .find_idle_vehicle_shortest_path_by_skill(begin_node_name, Skill::Item)
+            .await
+            .ok_or(Error::VehicleBusy)?;
+        let begin_side = self.node_side(begin_node_name)?;
+        let end_side = self.node_side(end_node_name)?;
+        let begin_to_end_path = self
+            .track_graph
+            .find_path(begin_node_name, end_node_name)
+            .await
+            .map_err(|_| Error::PathFind)?;
+
+        Ok((
+            id,
+            ActionSequenceBuilder::new()
+                .move_path(&to_begin_path)
+                .suck(&begin_side)
+                .move_path(&begin_to_end_path)
+                .drop(&end_side)
+                .build(),
+        ))
+    }
+
+    async fn trans_fluid_actions(
+        &self,
+        begin_node_name: &String,
+        end_node_name: &String,
+    ) -> Result<(u32, ActionSequence)> {
+        let (id, to_begin_path) = self
+            .find_idle_vehicle_shortest_path_by_skill(begin_node_name, Skill::Fluid)
+            .await
+            .ok_or(Error::VehicleBusy)?;
+
+        let begin_side = self.node_side(begin_node_name)?;
+        let end_side = self.node_side(end_node_name)?;
+        let begin_to_end_path = self
+            .track_graph
+            .find_path(begin_node_name, end_node_name)
+            .await
+            .map_err(|_| Error::PathFind)?;
+
+        Ok((
+            id,
+            ActionSequenceBuilder::new()
+                .move_path(&to_begin_path)
+                .drain(&begin_side)
+                .move_path(&begin_to_end_path)
+                .fill(&end_side)
+                .build(),
+        ))
+    }
+
+    async fn use_tool_actions(
+        &self,
+        node_name: &String,
+        tool_type: ToolType,
+    ) -> Result<(u32, ActionSequence)> {
+        let (id, to_end_path) = self
+            .find_idle_vehicle_shortest_path_by_skill(node_name, Skill::UseTool(tool_type))
+            .await
+            .ok_or(Error::VehicleBusy)?;
+        let end_side = self.node_side(node_name)?;
+
+        Ok((
+            id,
+            ActionSequenceBuilder::new()
+                .move_path(&to_end_path)
+                .use_tool(&end_side)
+                .build(),
+        ))
+    }
+
+    async fn plan_a_vehicle(&self, task: &Task) -> Result<()> {
+        match task {
+            Task::TransItem {
+                begin_node_name,
+                end_node_name,
+            } => {
+                let (id, actions) = self
+                    .trans_item_actions(begin_node_name, end_node_name)
+                    .await?;
+
+                self.vehicles
+                    .write()
+                    .await
+                    .get_mut(&id)
+                    .ok_or(Error::VehicleBusy)?
+                    .processing(actions)
+                    .await
+                    .map_err(|_| Error::VehicleBusy)?
+            }
+            Task::TransFluid {
+                begin_node_name,
+                end_node_name,
+            } => {
+                let (id, actions) = self
+                    .trans_fluid_actions(begin_node_name, end_node_name)
+                    .await?;
+
+                self.vehicles
+                    .write()
+                    .await
+                    .get_mut(&id)
+                    .ok_or(Error::VehicleBusy)?
+                    .processing(actions)
+                    .await
+                    .map_err(|_| Error::VehicleBusy)?
+            }
+            Task::UseTool {
+                end_node_name,
+                tool_type,
+            } => {
+                let (id, actions) = self
+                    .use_tool_actions(end_node_name, tool_type.clone())
+                    .await?;
+
+                self.vehicles
+                    .write()
+                    .await
+                    .get_mut(&id)
+                    .ok_or(Error::VehicleBusy)?
+                    .processing(actions)
+                    .await
+                    .map_err(|_| Error::VehicleBusy)?
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn plan(&mut self) {
+        let mut tasks = self.pending_tasks.write().await;
+        loop {
+            let tasks = &mut tasks.trans_item_task;
+            let task = match tasks.front() {
+                Some(task) => task,
+                None => break,
+            };
+            match self.plan_a_vehicle(task).await {
+                Ok(_) => {
+                    tasks.pop_front().unwrap();
+                }
+                Err(_) => break,
+            }
+        }
+
+        loop {
+            let tasks = &mut tasks.trans_fluid_task;
+            let task = match tasks.front() {
+                Some(task) => task,
+                None => break,
+            };
+            match self.plan_a_vehicle(task).await {
+                Ok(_) => {
+                    tasks.pop_front().unwrap();
+                }
+                Err(_) => break,
+            }
+        }
+
+        loop {
+            let tasks = &mut tasks.use_tool_task;
+            let task = match tasks.front() {
+                Some(task) => task,
+                None => break,
+            };
+            match self.plan_a_vehicle(task).await {
+                Ok(_) => {
+                    tasks.pop_front().unwrap();
+                }
+                Err(_) => break,
+            }
+        }
+    }
+}
