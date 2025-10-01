@@ -4,10 +4,7 @@ use tokio::{sync::RwLock, time};
 
 use chrono::Local;
 
-use crate::{
-    constant,
-    transport::vehicle::{State, Vehicle},
-};
+use crate::{constant, transport::vehicle::State};
 
 #[derive(Debug)]
 pub struct Timeout {
@@ -49,12 +46,12 @@ mod tests {
     use crate::transport::{
         prelude::Side,
         track::{self, NodeType},
-        vehicle::State,
+        vehicle::{State, Vehicle},
     };
 
     use super::*;
 
-    fn get_tarck_graph() -> track::TrackGraph {
+    fn get_tarck_graph() -> track::Graph {
         track::TrackGraphBuilder::new()
             .node("S1", (2.0, 3.0, 0.0), NodeType::ShippingDock(Side::PosZ))
             .node("P2", (0.0, 0.0, 0.0), NodeType::ParkingStation)

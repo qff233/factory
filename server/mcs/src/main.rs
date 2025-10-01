@@ -12,11 +12,11 @@ fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
     let file_layer = fmt::layer()
         .with_ansi(false)
         .with_writer(non_blocking)
-        .with_filter(LevelFilter::DEBUG);
+        .with_filter(LevelFilter::INFO);
     let stdout_layer = fmt::layer()
         .with_level(true)
         .with_writer(std::io::stdout)
-        .with_filter(LevelFilter::INFO);
+        .with_filter(LevelFilter::WARN);
 
     let collector = tracing_subscriber::registry()
         .with(file_layer)

@@ -5,22 +5,23 @@ use tokio::sync::RwLock;
 use tracing::error;
 
 use super::track;
-use super::track::TrackGraph;
 use crate::transport::prelude::*;
+use crate::transport::track::Graph;
 pub use crate::transport::vehicle::action::{Action, ActionSequence, ActionSequenceBuilder};
-use crate::transport::vehicle::overtime::Timeout;
 pub use crate::transport::vehicle::skill::Skill;
 pub use crate::transport::vehicle::skill::ToolType;
+use crate::transport::vehicle::timeout::Timeout;
 
 mod action;
-mod overtime;
 mod skill;
+mod timeout;
 
 #[derive(Debug)]
 pub enum Error {
     State,
     FindPath,
-    NodeSide,
+    TrackGraph,
+    NotInTrackGraph,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -43,12 +44,12 @@ pub struct Vehicle {
     state: Arc<RwLock<State>>,
     skill: Skill,
     overtime: Timeout,
-    track_graph: Arc<TrackGraph>,
+    track_graph: Arc<Graph>,
     node: Option<Arc<track::Node>>,
 }
 
 impl Vehicle {
-    pub async fn new(id: u32, track_graph: Arc<TrackGraph>) -> Self {
+    pub async fn new(id: u32, track_graph: Arc<Graph>) -> Self {
         let skill = Skill::from_id(&id);
         let state = Arc::new(RwLock::new(State::Offline));
         Self {
@@ -66,17 +67,35 @@ impl Vehicle {
     }
 
     async fn initing(&self, current_position: &Position, state: &mut State) -> Result<()> {
-        assert!(matches!(state, State::Offline));
+        if let State::Offline = state {
+        } else {
+            error!(
+                "vehicle({}): state error before initing. current status is {:?}, expect offline.",
+                self.id,
+                self.state.read().await
+            );
+            return Err(Error::State);
+        }
+
         let shortest_node = self
             .track_graph
             .find_shortest_node(current_position)
-            .map_err(|_| Error::FindPath)?;
+            .map_err(|e| {
+                error!(
+                    "vehicle({}): find shortest node path error in initing. error type: {:?}.current position is {:?}.",
+                    self.id, e,current_position
+                );
+                Error::FindPath
+            })?;
         let shortest_node_to_shipping_dock_path = self
             .track_graph
             .find_shipping_dock_path(shortest_node.name())
             .await
             .map_err(|e| {
-                error!("{} suffer {:?}", self.id, e);
+                error!(
+                    "vehicle({}): find shortest node to shipping dock path error in initing. error type: {:?}.current position is {:?}.",
+                    self.id, e,current_position
+                );
                 Error::FindPath
             })?;
         let mut actions = ActionSequenceBuilder::new().move_to(shortest_node.clone());
@@ -87,9 +106,15 @@ impl Vehicle {
                     .drop(
                         shortest_node_to_shipping_dock_path
                             .last()
-                            .unwrap()
+                            .ok_or_else(|| {
+                                error!("vehicle({}): get shipping node from path error. current position is {:?}. current state is {:?}.",self.id, current_position, self.state);
+                                Error::TrackGraph
+                            })?
                             .side()
-                            .ok_or(Error::NodeSide)?,
+                            .ok_or_else(|| {
+                                error!("vehicle({}): get side of shipping dock error. current position is {:?}. current state is {:?}.",self.id, current_position, self.state);
+                                Error::TrackGraph
+                            })?,
                     );
             }
             Skill::Fluid => {
@@ -98,9 +123,15 @@ impl Vehicle {
                     .fill(
                         shortest_node_to_shipping_dock_path
                             .last()
-                            .unwrap()
+                            .ok_or_else(|| {
+                                error!("vehicle({}): get shipping node from path error. current position is {:?}. current state is {:?}.",self.id, current_position, self.state);
+                                Error::TrackGraph
+                            })?
                             .side()
-                            .ok_or(Error::NodeSide)?,
+                            .ok_or_else(|| {
+                                error!("vehicle({}): get side of shipping dock error. current position is {:?}. current state is {:?}",self.id, current_position, self.state);
+                                Error::TrackGraph
+                            })?,
                     );
             }
             _ => (),
@@ -109,8 +140,8 @@ impl Vehicle {
         Ok(())
     }
 
-    pub fn node(&self) -> Option<Arc<track::Node>> {
-        self.node.clone()
+    pub fn node(&self) -> Result<Arc<track::Node>> {
+        self.node.clone().ok_or(Error::NotInTrackGraph)
     }
 
     pub fn skill(&self) -> &Skill {
@@ -140,7 +171,7 @@ impl Vehicle {
                     actions.pop_next_action();
                     actions.next_action().cloned()
                 } else {
-                    Some(actions.next_action().unwrap().clone())
+                    Some(actions.next_action()?.clone())
                 }
             }
             _ => {
@@ -152,25 +183,43 @@ impl Vehicle {
 
     async fn parking(&self, state: &mut State) -> Result<()> {
         if let State::ChargeDone = *state {
-            self.track_graph
-                .unlock_node(self.node.clone().unwrap().name())
-                .await;
+            self.track_graph.unlock_node(self.node()?.name()).await;
         }
         match *state {
             State::ChargeDone | State::ProcessDone | State::InitDone => {
                 let path = self
                     .track_graph
-                    .find_parking_path(self.node.clone().unwrap().name())
+                    .find_parking_path(
+                        self.node()
+                            .map_err(|e| {
+                                error!(
+                                    "vehicle({}): find current node in parking. error type: {:?}.",
+                                    self.id, e
+                                );
+                                Error::NotInTrackGraph
+                            })?
+                            .name(),
+                    )
                     .await
                     .map_err(|_| Error::FindPath)?;
                 self.track_graph
-                    .lock_node(path.last().unwrap().name())
+                    .lock_node(path.last().ok_or_else(|| {
+                        error!("vehicle({}): get parking node from path error. current state is {:?}.",self.id, self.state);
+                        Error::TrackGraph
+                    })?.name())
                     .await;
                 let actions = ActionSequenceBuilder::new().move_path(&path).build();
                 *state = State::Parking(actions);
                 Ok(())
             }
-            _ => Err(Error::State),
+            _ => {
+                error!(
+                    "vehicle({}): state error before parking. current status is {:?}, expect ChargeDone|ProcessDone|InitDone.",
+                    self.id,
+                    self.state.read().await
+                );
+                Err(Error::State)
+            }
         }
     }
 
@@ -181,20 +230,40 @@ impl Vehicle {
             self.track_graph.unlock_node(node.name()).await;
         }
         match *state {
-            State::ParkDone | State::Parking(_) | State::ProcessDone => {
+            State::ParkDone | State::Parking(_) | State::ProcessDone | State::InitDone => {
                 let path = self
                     .track_graph
-                    .find_charging_path(self.node.clone().unwrap().name())
+                    .find_charging_path(
+                        self.node()
+                            .map_err(|e| {
+                                error!(
+                                    "vehicle({}): find current node in parking. error type: {:?}.",
+                                    self.id, e
+                                );
+                                Error::NotInTrackGraph
+                            })?
+                            .name(),
+                    )
                     .await
                     .map_err(|_| Error::FindPath)?;
                 self.track_graph
-                    .lock_node(path.last().unwrap().name())
+                    .lock_node(path.last().ok_or_else(|| {
+                        error!("vehicle({}): get parking node from path error. current state is {:?}.",self.id, self.state);
+                        Error::TrackGraph
+                    })?.name())
                     .await;
                 let actions = ActionSequenceBuilder::new().move_path(&path).build();
                 *state = State::Charging(actions);
                 Ok(())
             }
-            _ => Err(Error::State),
+            _ => {
+                error!(
+                    "vehicle({}): state error before charging. current status is {:?}, expect ParkDone|Parking|ProcessDone.",
+                    self.id,
+                    self.state.read().await
+                );
+                Err(Error::State)
+            }
         }
     }
 
@@ -224,7 +293,7 @@ impl Vehicle {
                 }
                 State::Parking(actions) => {
                     if require_charge {
-                        self.charging(&mut state).await.unwrap();
+                        self.charging(&mut state).await.ok()?;
                     } else {
                         let action = Self::next_action(current_position, &mut self.node, actions);
                         if action.is_some() {
@@ -246,52 +315,57 @@ impl Vehicle {
                     }
                 }
                 State::InitDone => {
-                    self.parking(&mut state).await.unwrap();
+                    if require_charge {
+                        self.charging(&mut state).await.ok()?;
+                    } else {
+                        self.parking(&mut state).await.ok()?;
+                    }
                 }
                 State::ChargeDone => {
-                    self.parking(&mut state).await.unwrap();
+                    self.parking(&mut state).await.ok()?;
                 }
                 State::ProcessDone => {
                     if require_charge {
-                        self.charging(&mut state).await.unwrap();
+                        self.charging(&mut state).await.ok()?;
                     } else {
-                        self.parking(&mut state).await.unwrap();
+                        self.parking(&mut state).await.ok()?;
                     }
                 }
                 State::ParkDone => {
                     if require_charge {
-                        self.charging(&mut state).await.unwrap();
+                        self.charging(&mut state).await.ok()?;
                     } else {
                         return None;
                     }
                 }
                 State::Offline => {
-                    self.initing(current_position, &mut state).await.unwrap();
+                    self.initing(current_position, &mut state).await.ok()?;
                 }
             }
         }
     }
 
     pub async fn processing(&mut self, actions: ActionSequence) -> Result<()> {
-        let state = self.state.read().await;
+        let mut state = self.state.write().await;
         match &*state {
             State::ParkDone | State::ChargeDone | State::ProcessDone | State::InitDone => {
-                self.track_graph
-                    .unlock_node(self.node.clone().unwrap().name())
-                    .await;
-                drop(state);
-                *self.state.write().await = State::Processing(actions);
+                self.track_graph.unlock_node(self.node()?.name()).await;
+                *state = State::Processing(actions);
                 Ok(())
             }
             State::Parking(parking_actions) => {
                 if let Some(node) = parking_actions.last_move_node() {
                     self.track_graph.unlock_node(node.name()).await;
                 }
-                drop(state);
-                *self.state.write().await = State::Processing(actions);
+                *state = State::Processing(actions);
                 Ok(())
             }
             State::Initing(_) | State::Processing(_) | State::Charging(_) | State::Offline => {
+                error!(
+                    "vehicle({}): state error before processing. current status is {:?}, expect ParkDone|Parking|ProcessDone|ChargeDone|InitDone",
+                    self.id,
+                    self.state.read().await
+                );
                 Err(Error::State)
             }
         }
@@ -309,7 +383,7 @@ mod tests {
     use super::track::NodeType;
     use super::*;
 
-    fn get_tarck_graph() -> track::TrackGraph {
+    fn get_tarck_graph() -> track::Graph {
         track::TrackGraphBuilder::new()
             .node("S1", (2.0, 3.0, 0.0), NodeType::ShippingDock(Side::PosZ))
             .node("P2", (0.0, 0.0, 0.0), NodeType::ParkingStation)

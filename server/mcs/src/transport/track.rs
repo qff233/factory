@@ -5,6 +5,7 @@ use core::panic;
 use std::{
     collections::{BinaryHeap, HashMap, HashSet, LinkedList},
     fs::File,
+    ops::Deref,
     sync::Arc,
 };
 
@@ -80,7 +81,7 @@ impl From<Vec<&str>> for NodeType {
     fn from(value: Vec<&str>) -> Self {
         match *value.first().expect("can not get node_type") {
             "stocker" => {
-                let side = *value.get(1).expect("can not get machine side");
+                let side = *value.get(1).expect("can not get stocker side");
                 Self::Stocker(side.into())
             }
             _ => panic!("no such node_type, {:?}", value),
@@ -113,7 +114,22 @@ impl Node {
     }
 }
 
-pub type Path = Vec<Arc<Node>>;
+#[derive(Clone)]
+pub(crate) struct Path(Vec<Arc<Node>>);
+
+impl Deref for Path {
+    type Target = [Arc<Node>];
+    fn deref(&self) -> &Self::Target {
+        self.0.as_slice()
+    }
+}
+
+impl From<LinkedList<Arc<Node>>> for Path {
+    fn from(value: LinkedList<Arc<Node>>) -> Self {
+        let innner = value.into_iter().collect();
+        Self(innner)
+    }
+}
 
 #[derive(Debug)]
 enum EdgeState {
@@ -130,7 +146,7 @@ struct Edge {
 }
 
 #[derive(Debug)]
-pub struct TrackGraph {
+pub(crate) struct Graph {
     edges: HashMap<String, Vec<Arc<Edge>>>,
     nodes: HashMap<String, Arc<Node>>,
 }
@@ -149,7 +165,7 @@ fn heuristic_distance(from_position: &Position, to_position: &Position) -> f64 {
     (x1 - x2).abs() + (y1 - y2).abs() + (z1 - z2).abs()
 }
 
-impl TrackGraph {
+impl Graph {
     fn new() -> Self {
         Self {
             nodes: HashMap::new(),
@@ -243,7 +259,7 @@ impl TrackGraph {
                     current_node_name = prev_node.name.clone();
                     result.push_front(prev_node.clone());
                 }
-                return Ok(result.into_iter().collect());
+                return Ok(result.into());
             }
 
             close_node.insert(current_node.name.clone());
@@ -302,7 +318,7 @@ impl TrackGraph {
                     current_node_name = prev_node.name.clone();
                     result.push_front(prev_node.clone());
                 }
-                return Ok(result.into_iter().collect());
+                return Ok(result.into());
             }
 
             close_node.insert(current_node.name.clone());
@@ -373,13 +389,13 @@ impl TrackGraph {
 }
 
 pub(crate) struct TrackGraphBuilder {
-    track_graph: TrackGraph,
+    track_graph: Graph,
 }
 
 impl TrackGraphBuilder {
     pub(crate) fn new() -> TrackGraphBuilder {
         Self {
-            track_graph: TrackGraph::new(),
+            track_graph: Graph::new(),
         }
     }
 
@@ -387,7 +403,7 @@ impl TrackGraphBuilder {
         let file = File::open(file_path).expect("can not open oht_track json file");
         let json: serde_json::Value = serde_json::from_reader(file).expect("can not parse json");
 
-        let mut track_graph = TrackGraph::new();
+        let mut track_graph = Graph::new();
 
         json.get("nodes")
             .unwrap()
@@ -491,7 +507,7 @@ impl TrackGraphBuilder {
         self.edge(node2, node1)
     }
 
-    pub fn build(self) -> TrackGraph {
+    pub fn build(self) -> Graph {
         self.track_graph
     }
 }
@@ -500,7 +516,7 @@ impl TrackGraphBuilder {
 mod test {
     use super::*;
 
-    fn get_grack_graph() -> TrackGraph {
+    fn get_grack_graph() -> Graph {
         TrackGraphBuilder::new()
             .node("P2", (0.0, 0.0, 0.0), NodeType::ParkingStation)
             .node("C1", (1.0, 0.0, 0.0), NodeType::ChargingStation)
@@ -576,7 +592,7 @@ mod test {
             .build();
         let mut path: Vec<String> = Vec::new();
         let result = track_graph.a_star("S3", "S2").await.unwrap();
-        for node in result {
+        for node in result.0 {
             path.push(node.name.clone());
         }
         assert_eq!(path, ["S3", "P2", "A6", "S2"]);
@@ -588,14 +604,14 @@ mod test {
 
         let mut path: Vec<String> = Vec::new();
         let result = track_graph.find_parking_path("A4").await.unwrap();
-        for node in result {
+        for node in result.0 {
             path.push(node.name.clone());
         }
         assert_eq!(path, ["A4", "A3", "A2", "A1", "P1"]);
 
         let mut path: Vec<String> = Vec::new();
         let result = track_graph.find_charging_path("A4").await.unwrap();
-        for node in result {
+        for node in result.0 {
             path.push(node.name.clone());
         }
         assert_eq!(path, ["A4", "A3", "A2", "C1"]);
@@ -606,7 +622,7 @@ mod test {
         let track_graph = TrackGraphBuilder::from_json("./tests/oht_trackgraph.json").build();
         let mut path: Vec<String> = Vec::new();
         let result = track_graph.find_path("A", "F").await.unwrap();
-        for node in result {
+        for node in result.0 {
             path.push(node.name.clone());
         }
         assert_eq!(path, ["A", "B", "C", "F"]);

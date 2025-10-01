@@ -1,17 +1,21 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, LinkedList},
+    sync::Arc,
+};
 
 use tokio::{
     sync::RwLock,
     time::{self},
 };
+use tracing::error;
 
 use crate::{
     constant,
     transport::{
-        TrackGraph,
         prelude::Side,
         schedule::{Error, Result, Task, TaskList},
         track,
+        track::Graph,
         vehicle::{ActionSequence, ActionSequenceBuilder, Skill, ToolType, Vehicle},
     },
 };
@@ -19,14 +23,14 @@ use crate::{
 #[derive(Debug)]
 pub struct ActionPlanner {
     vehicles: Arc<RwLock<HashMap<u32, Vehicle>>>,
-    track_graph: Arc<TrackGraph>,
+    track_graph: Arc<Graph>,
     pending_tasks: Arc<RwLock<TaskList>>,
 }
 
 impl ActionPlanner {
     pub fn new(
         vehicles: Arc<RwLock<HashMap<u32, Vehicle>>>,
-        track_graph: Arc<TrackGraph>,
+        track_graph: Arc<Graph>,
         pending_tasks: Arc<RwLock<TaskList>>,
     ) -> () {
         let planner = Self {
@@ -57,7 +61,9 @@ impl ActionPlanner {
                 continue;
             }
 
-            if let Ok(path) = self.track_graph.find_path(vehicle.node()?.name(), to).await {
+            if let Ok(path) = self.track_graph.find_path(vehicle.node().map_err(|e|{
+                error!("vehicle({}): current node not find in idle. may be not in trackgraph or dont init. error type is {:?}.", {id}, {e});
+            }).ok()?.name(), to).await {
                 result.push((*id, path));
             }
         }
@@ -152,7 +158,7 @@ impl ActionPlanner {
         ))
     }
 
-    async fn plan_a_vehicle(&self, task: &Task) -> Result<()> {
+    async fn plan_for_vehicle(&self, task: &Task) -> Result<()> {
         match task {
             Task::TransItem {
                 begin_node_name,
@@ -210,48 +216,24 @@ impl ActionPlanner {
         Ok(())
     }
 
+    async fn plan_from_tasks(&self, tasks: &mut LinkedList<Task>) {
+        loop {
+            match tasks.front() {
+                Some(task) => match self.plan_for_vehicle(task).await {
+                    Ok(_) => {
+                        tasks.pop_front();
+                    }
+                    Err(_) => break,
+                },
+                None => break,
+            }
+        }
+    }
+
     async fn plan(&mut self) {
         let mut tasks = self.pending_tasks.write().await;
-        loop {
-            let tasks = &mut tasks.trans_item_task;
-            let task = match tasks.front() {
-                Some(task) => task,
-                None => break,
-            };
-            match self.plan_a_vehicle(task).await {
-                Ok(_) => {
-                    tasks.pop_front().unwrap();
-                }
-                Err(_) => break,
-            }
-        }
-
-        loop {
-            let tasks = &mut tasks.trans_fluid_task;
-            let task = match tasks.front() {
-                Some(task) => task,
-                None => break,
-            };
-            match self.plan_a_vehicle(task).await {
-                Ok(_) => {
-                    tasks.pop_front().unwrap();
-                }
-                Err(_) => break,
-            }
-        }
-
-        loop {
-            let tasks = &mut tasks.use_tool_task;
-            let task = match tasks.front() {
-                Some(task) => task,
-                None => break,
-            };
-            match self.plan_a_vehicle(task).await {
-                Ok(_) => {
-                    tasks.pop_front().unwrap();
-                }
-                Err(_) => break,
-            }
-        }
+        self.plan_from_tasks(&mut tasks.trans_item_task).await;
+        self.plan_from_tasks(&mut tasks.trans_fluid_task).await;
+        self.plan_from_tasks(&mut tasks.use_tool_task).await;
     }
 }

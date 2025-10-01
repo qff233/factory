@@ -4,16 +4,16 @@ use tokio::sync::{RwLock, mpsc};
 use tracing::warn;
 
 use crate::transport::{
-    TrackGraph,
     prelude::Position,
     schedule::{Task, TaskList, action_planner::ActionPlanner},
+    track::Graph,
     vehicle::{Action, Vehicle},
 };
 
 #[derive(Debug)]
 pub struct ScheduleExec {
     tool_warn_level: f32,
-    track_graph: Arc<TrackGraph>,
+    track_graph: Arc<Graph>,
     vehicles: Arc<RwLock<HashMap<u32, Vehicle>>>,
 }
 
@@ -21,7 +21,7 @@ impl ScheduleExec {
     pub async fn new(
         mut receiver: mpsc::Receiver<Task>,
         tool_warn_level: f32,
-        track_graph: TrackGraph,
+        track_graph: Graph,
     ) -> Self {
         let vehicles = Arc::new(RwLock::new(HashMap::new()));
         let track_graph = Arc::new(track_graph);
