@@ -4,6 +4,7 @@ use std::collections::LinkedList;
 mod action_planner;
 mod exec;
 mod request;
+mod db_client;
 
 #[derive(Debug)]
 pub enum Error {

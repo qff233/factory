@@ -78,7 +78,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn overtime_vehicle() {
+    async fn vehicle_timeout() {
         let track_graph = Arc::new(get_tarck_graph());
         let vehicle = Arc::new(RwLock::new(Vehicle::new(2000, track_graph).await));
 
