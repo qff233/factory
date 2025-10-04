@@ -15,15 +15,6 @@ CREATE TYPE NodeType AS ENUM(
 	'fluid_stocker'
 );
 
-CREATE TYPE Side AS ENUM(
-	'posx',
-	'posy',
-	'posz',
-	'negx',
-	'negy',
-	'negz'
-);
-
 CREATE TYPE Direction AS ENUM(
 	'BIDIRECTIONAL',
 	'UNIDIRECTIONAL'
@@ -33,23 +24,11 @@ CREATE TABLE nodes(
 	id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	name VARCHAR(50) NOT NULL UNIQUE,
 	type NodeType NOT NULL,
-	side side,
 	geom geometry(PointZ) NOT NULL,
-	comment TEXT,
-	CONSTRAINT side_should_is_not_null_in_some_type
-	CHECK(
-		CASE
-			WHEN type in (
-				'shipping_dock',
-				'item_stocker',
-				'fluid_stocker') 
-			THEN side IS NOT NULL
-			ELSE true
-		END
-	)
+	comment TEXT
 );
 
-CREATE TABLE edges(
+CREATE TABLE IF NOT EXISTS edges(
 	id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 	begin_node_id INT REFERENCES nodes(id),
 	end_node_id INT REFERENCES nodes(id),

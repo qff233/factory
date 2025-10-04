@@ -1,5 +1,5 @@
 #[derive(Debug)]
-pub(crate) struct Position(f64, f64, f64);
+pub(crate) struct Position(pub f64, pub f64, pub f64);
 
 impl PartialEq for Position {
     fn eq(&self, other: &Self) -> bool {
@@ -18,29 +18,5 @@ impl From<&Position> for (f64, f64, f64) {
 impl From<(f64, f64, f64)> for Position {
     fn from(value: (f64, f64, f64)) -> Self {
         Self(value.0, value.1, value.2)
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Side {
-    NegY,
-    PosY,
-    NegZ,
-    PosZ,
-    NegX,
-    PosX,
-}
-
-impl From<&str> for Side {
-    fn from(value: &str) -> Self {
-        match value {
-            "negy" => Self::NegY,
-            "posy" => Self::PosY,
-            "negz" => Self::NegZ,
-            "posz" => Self::PosZ,
-            "negx" => Self::NegX,
-            "posx" => Self::PosX,
-            _ => panic!("no such side, {}", value),
-        }
     }
 }

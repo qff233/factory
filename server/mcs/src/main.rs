@@ -27,6 +27,7 @@ fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     let _guard = init_tracing();
     info!("Starting server...");
 

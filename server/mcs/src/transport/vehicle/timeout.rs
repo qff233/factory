@@ -41,45 +41,34 @@ impl Timeout {
 
 #[cfg(test)]
 mod tests {
+    use dotenvy::dotenv;
+    use sqlx::postgres::PgPoolOptions;
     use tokio::time;
 
     use crate::transport::{
-        prelude::Side,
-        track::{self, NodeType},
+        db_manager::DbManager,
+        track::Graph,
         vehicle::{State, Vehicle},
     };
 
     use super::*;
 
-    fn get_tarck_graph() -> track::Graph {
-        track::TrackGraphBuilder::new()
-            .node("S1", (2.0, 3.0, 0.0), NodeType::ShippingDock(Side::PosZ))
-            .node("P2", (0.0, 0.0, 0.0), NodeType::ParkingStation)
-            .node("C1", (1.0, 0.0, 0.0), NodeType::ChargingStation)
-            .node("P1", (2.0, 0.0, 0.0), NodeType::ParkingStation)
-            .node("A1", (2.0, 1.0, 0.0), NodeType::Fork)
-            .node("A2", (1.0, 1.0, 0.0), NodeType::Fork)
-            .node("A3", (1.0, 2.0, 0.0), NodeType::Fork)
-            .node("A4", (2.0, 2.0, 0.0), NodeType::Fork)
-            .node("A5", (0.0, 2.0, 0.0), NodeType::Fork)
-            .node("A6", (0.0, 1.0, 0.0), NodeType::Fork)
-            .edge_double("P2", "A6")
-            .edge_double("C1", "A2")
-            .edge_double("P1", "A1")
-            .edge_double("S1", "A4")
-            .edge("A6", "A2")
-            .edge("A2", "A1")
-            .edge("A1", "A4")
-            .edge("A4", "A3")
-            .edge("A3", "A2")
-            .edge("A3", "A5")
-            .edge("A5", "A6")
-            .build()
+    async fn get_track_graph() -> Graph {
+        dotenv().ok();
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        println!("Connecting to database: {}", database_url);
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_url)
+            .await
+            .expect("Failed to create pool");
+        let db_manaer = DbManager::new(pool);
+        Graph::new(db_manaer).await
     }
 
     #[tokio::test]
     async fn vehicle_timeout() {
-        let track_graph = Arc::new(get_tarck_graph());
+        let track_graph = Arc::new(get_track_graph().await);
         let vehicle = Arc::new(RwLock::new(Vehicle::new(2000, track_graph).await));
 
         assert!(matches!(

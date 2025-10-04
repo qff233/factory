@@ -11,14 +11,14 @@ nodes(name, type, geom)
 VALUES ('C1','charging_station', ST_MakePoint(1,0,0));
 
 INSERT INTO 
-nodes(name, type, side,geom)
-VALUES ('S1','item_stocker', 'posz',ST_MakePoint(1,3,0));
+nodes(name, type, geom)
+VALUES ('S1','item_stocker', ST_MakePoint(1,3,0));
 INSERT INTO 
-nodes(name, type, side,geom)
-VALUES ('S2','item_stocker', 'posz',ST_MakePoint(-1,1,0));
+nodes(name, type, geom)
+VALUES ('S2','item_stocker', ST_MakePoint(-1,1,0));
 INSERT INTO 
-nodes(name, type, side,geom)
-VALUES ('S3','shipping_dock', 'posz',ST_MakePoint(-1,2,0));
+nodes(name, type, geom)
+VALUES ('S3','shipping_dock', ST_MakePoint(-1,2,0));
 
 INSERT INTO 
 nodes(name, type, geom)

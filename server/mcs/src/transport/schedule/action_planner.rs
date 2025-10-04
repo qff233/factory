@@ -12,7 +12,6 @@ use tracing::error;
 use crate::{
     constant,
     transport::{
-        prelude::Side,
         schedule::{Error, Result, Task, TaskList},
         track,
         track::Graph,
@@ -28,11 +27,11 @@ pub struct ActionPlanner {
 }
 
 impl ActionPlanner {
-    pub fn new(
+    pub fn run(
         vehicles: Arc<RwLock<HashMap<u32, Vehicle>>>,
         track_graph: Arc<Graph>,
         pending_tasks: Arc<RwLock<TaskList>>,
-    ) -> () {
+    ) {
         let planner = Self {
             vehicles,
             track_graph,
@@ -61,9 +60,9 @@ impl ActionPlanner {
                 continue;
             }
 
-            if let Ok(path) = self.track_graph.find_path(vehicle.node().map_err(|e|{
+            if let Ok(path) = self.track_graph.find_path(&vehicle.node().map_err(|e|{
                 error!("vehicle({}): current node not find in idle. may be not in trackgraph or dont init. error type is {:?}.", {id}, {e});
-            }).ok()?.name(), to).await {
+            }).ok()?.name, to).await {
                 result.push((*id, path));
             }
         }
@@ -71,27 +70,15 @@ impl ActionPlanner {
         result.first().cloned()
     }
 
-    fn node_side(&self, node_name: &String) -> Result<Side> {
-        Ok(self
-            .track_graph
-            .node(node_name)
-            .ok_or(Error::NodeFind)?
-            .side()
-            .ok_or(Error::NodeFind)?
-            .clone())
-    }
-
     async fn trans_item_actions(
         &self,
-        begin_node_name: &String,
-        end_node_name: &String,
+        begin_node_name: &str,
+        end_node_name: &str,
     ) -> Result<(u32, ActionSequence)> {
         let (id, to_begin_path) = self
             .find_idle_vehicle_shortest_path_by_skill(begin_node_name, Skill::Item)
             .await
             .ok_or(Error::VehicleBusy)?;
-        let begin_side = self.node_side(begin_node_name)?;
-        let end_side = self.node_side(end_node_name)?;
         let begin_to_end_path = self
             .track_graph
             .find_path(begin_node_name, end_node_name)
@@ -102,25 +89,23 @@ impl ActionPlanner {
             id,
             ActionSequenceBuilder::new()
                 .move_path(&to_begin_path)
-                .suck(&begin_side)
+                .suck()
                 .move_path(&begin_to_end_path)
-                .drop(&end_side)
+                .drop()
                 .build(),
         ))
     }
 
     async fn trans_fluid_actions(
         &self,
-        begin_node_name: &String,
-        end_node_name: &String,
+        begin_node_name: &str,
+        end_node_name: &str,
     ) -> Result<(u32, ActionSequence)> {
         let (id, to_begin_path) = self
             .find_idle_vehicle_shortest_path_by_skill(begin_node_name, Skill::Fluid)
             .await
             .ok_or(Error::VehicleBusy)?;
 
-        let begin_side = self.node_side(begin_node_name)?;
-        let end_side = self.node_side(end_node_name)?;
         let begin_to_end_path = self
             .track_graph
             .find_path(begin_node_name, end_node_name)
@@ -131,29 +116,28 @@ impl ActionPlanner {
             id,
             ActionSequenceBuilder::new()
                 .move_path(&to_begin_path)
-                .drain(&begin_side)
+                .drain()
                 .move_path(&begin_to_end_path)
-                .fill(&end_side)
+                .fill()
                 .build(),
         ))
     }
 
     async fn use_tool_actions(
         &self,
-        node_name: &String,
+        node_name: &str,
         tool_type: ToolType,
     ) -> Result<(u32, ActionSequence)> {
         let (id, to_end_path) = self
             .find_idle_vehicle_shortest_path_by_skill(node_name, Skill::UseTool(tool_type))
             .await
             .ok_or(Error::VehicleBusy)?;
-        let end_side = self.node_side(node_name)?;
 
         Ok((
             id,
             ActionSequenceBuilder::new()
                 .move_path(&to_end_path)
-                .use_tool(&end_side)
+                .use_tool()
                 .build(),
         ))
     }
@@ -217,15 +201,12 @@ impl ActionPlanner {
     }
 
     async fn plan_from_tasks(&self, tasks: &mut LinkedList<Task>) {
-        loop {
-            match tasks.front() {
-                Some(task) => match self.plan_for_vehicle(task).await {
-                    Ok(_) => {
-                        tasks.pop_front();
-                    }
-                    Err(_) => break,
-                },
-                None => break,
+        while let Some(task) = tasks.front() {
+            match self.plan_for_vehicle(task).await {
+                Ok(_) => {
+                    tasks.pop_front();
+                }
+                Err(_) => break,
             }
         }
     }

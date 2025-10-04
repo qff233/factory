@@ -1,15 +1,15 @@
 use std::{collections::LinkedList, sync::Arc};
 
-use crate::transport::{prelude::Side, track};
+use crate::transport::track;
 
 #[derive(Debug, Clone)]
 pub enum Action {
     Move(Arc<track::Node>),
-    Drop(Side),
-    Suck(Side),
-    Drain(Side),
-    Fill(Side),
-    Use(Side),
+    Drop,
+    Suck,
+    Drain,
+    Fill,
+    Use,
 }
 
 #[derive(Debug)]
@@ -53,28 +53,28 @@ impl ActionSequenceBuilder {
         self
     }
 
-    pub fn drop(mut self, side: &Side) -> Self {
-        self.0.push_back(Action::Drop(side.clone()));
+    pub fn drop(mut self) -> Self {
+        self.0.push_back(Action::Drop);
         self
     }
 
-    pub fn suck(mut self, side: &Side) -> Self {
-        self.0.push_back(Action::Suck(side.clone()));
+    pub fn suck(mut self) -> Self {
+        self.0.push_back(Action::Suck);
         self
     }
 
-    pub fn drain(mut self, side: &Side) -> Self {
-        self.0.push_back(Action::Drain(side.clone()));
+    pub fn drain(mut self) -> Self {
+        self.0.push_back(Action::Drain);
         self
     }
 
-    pub fn fill(mut self, side: &Side) -> Self {
-        self.0.push_back(Action::Fill(side.clone()));
+    pub fn fill(mut self) -> Self {
+        self.0.push_back(Action::Fill);
         self
     }
 
-    pub fn use_tool(mut self, side: &Side) -> Self {
-        self.0.push_back(Action::Use(side.clone()));
+    pub fn use_tool(mut self) -> Self {
+        self.0.push_back(Action::Use);
         self
     }
 
