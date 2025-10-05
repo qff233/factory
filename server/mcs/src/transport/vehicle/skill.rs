@@ -17,7 +17,7 @@ pub enum ToolType {
     SoftHammer, // 软锤
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Skill {
     Item,
     Fluid,

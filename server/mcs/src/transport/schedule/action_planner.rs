@@ -166,36 +166,13 @@ impl ActionPlanner {
         ))
     }
 
-    async fn update_state_processing(
-        &self,
-        conn: &mut PgConnection,
-        table_name: &str,
-        vehicle_id: i32,
-        task_id: i32,
-    ) -> Result<()> {
-        let query_sql = format!(
-            "
-            UPDATE {}
-            SET vehicle_id = $1,state = 'processing'
-            WHERE id = $2;
-        ",
-            table_name
-        );
-        sqlx::query(&query_sql)
-            .bind(vehicle_id)
-            .bind(task_id)
-            .execute(conn)
-            .await
-            .map_err(Error::Db)?;
-        Ok(())
-    }
-
     async fn get_item_rows(&self, conn: &mut PgConnection) -> Result<Vec<ItemFluidRow>> {
         sqlx::query_as::<_, ItemFluidRow>(
             "
             SELECT id,begin_node_name,end_node_name
             FROM item
             WHERE state = 'pending'
+            ORDER BY date_created
             LIMIT 20;
         ",
         )
@@ -210,6 +187,7 @@ impl ActionPlanner {
             SELECT id, begin_node_name, end_node_name
             FROM fluid
             WHERE state = 'pending'
+            ORDER BY date_created
             LIMIT 20;
         ",
         )
@@ -224,6 +202,7 @@ impl ActionPlanner {
             SELECT id, end_node_name, tool_type
             FROM use_tool
             WHERE state = 'pending'
+            ORDER BY date_created
             LIMIT 20;
         ",
         )
@@ -232,11 +211,7 @@ impl ActionPlanner {
         .map_err(Error::Db)
     }
 
-    async fn plan_tran_item(
-        &self,
-        item_rows: Vec<ItemFluidRow>,
-        conn: &mut PgConnection,
-    ) -> Result<()> {
+    async fn plan_tran_item(&self, item_rows: Vec<ItemFluidRow>) -> Result<()> {
         for row in item_rows {
             let (vehicle_id, actions) = self
                 .trans_item_actions(&row.begin_node_name.trim(), &row.end_node_name.trim())
@@ -247,20 +222,14 @@ impl ActionPlanner {
                 .await
                 .get_mut(&vehicle_id)
                 .ok_or(Error::VehicleBusy)?
-                .processing(actions)
+                .processing(row.id, actions)
                 .await
                 .map_err(|_| Error::VehicleBusy)?;
-            self.update_state_processing(conn, "item", vehicle_id, row.id)
-                .await?;
         }
         Ok(())
     }
 
-    async fn plan_tran_fluid(
-        &self,
-        item_rows: Vec<ItemFluidRow>,
-        conn: &mut PgConnection,
-    ) -> Result<()> {
+    async fn plan_tran_fluid(&self, item_rows: Vec<ItemFluidRow>) -> Result<()> {
         for row in item_rows {
             let (vehicle_id, actions) = self
                 .trans_fluid_actions(&row.begin_node_name.trim(), &row.end_node_name.trim())
@@ -271,20 +240,14 @@ impl ActionPlanner {
                 .await
                 .get_mut(&vehicle_id)
                 .ok_or(Error::VehicleBusy)?
-                .processing(actions)
+                .processing(row.id, actions)
                 .await
                 .map_err(|_| Error::VehicleBusy)?;
-            self.update_state_processing(&mut *conn, "fluid", vehicle_id, row.id)
-                .await?;
         }
         Ok(())
     }
 
-    async fn plan_use_tool(
-        &self,
-        item_rows: Vec<UseToolRow>,
-        conn: &mut PgConnection,
-    ) -> Result<()> {
+    async fn plan_use_tool(&self, item_rows: Vec<UseToolRow>) -> Result<()> {
         for row in item_rows {
             let (vehicle_id, actions) = self
                 .use_tool_actions(&row.end_node_name.trim(), row.tool_type)
@@ -295,11 +258,9 @@ impl ActionPlanner {
                 .await
                 .get_mut(&vehicle_id)
                 .ok_or(Error::VehicleBusy)?
-                .processing(actions)
+                .processing(row.id, actions)
                 .await
                 .map_err(|_| Error::VehicleBusy)?;
-            self.update_state_processing(&mut *conn, "use_tool", vehicle_id, row.id)
-                .await?;
         }
         Ok(())
     }
@@ -307,7 +268,7 @@ impl ActionPlanner {
     async fn plan(&mut self) -> Result<()> {
         let mut conn = self.db.transport().await.map_err(Error::Db)?;
         let item_rows = self.get_item_rows(&mut *conn).await?;
-        if let Err(e) = self.plan_tran_item(item_rows, &mut *conn).await {
+        if let Err(e) = self.plan_tran_item(item_rows).await {
             if let Error::VehicleBusy = e {
             } else {
                 error!("plan() suffer error: {:#?}", e);
@@ -315,7 +276,7 @@ impl ActionPlanner {
         }
 
         let fluid_rows = self.get_fluid_rows(&mut *conn).await?;
-        if let Err(e) = self.plan_tran_fluid(fluid_rows, &mut *conn).await {
+        if let Err(e) = self.plan_tran_fluid(fluid_rows).await {
             if let Error::VehicleBusy = e {
             } else {
                 error!("plan() suffer error: {:#?}", e);
@@ -323,7 +284,7 @@ impl ActionPlanner {
         }
 
         let use_tool_rows = self.get_use_tool_rows(&mut *conn).await?;
-        if let Err(e) = self.plan_use_tool(use_tool_rows, &mut *conn).await {
+        if let Err(e) = self.plan_use_tool(use_tool_rows).await {
             if let Error::VehicleBusy = e {
             } else {
                 error!("plan() suffer error: {:#?}", e);

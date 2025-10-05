@@ -1,4 +1,5 @@
 use crate::transport::schedule::{Error, Result};
+use crate::transport::vehicle::Skill;
 use crate::transport::{db_manager::DbManager, vehicle};
 use sqlx::{PgConnection, query};
 use std::sync::Arc;
@@ -36,21 +37,56 @@ impl StateUpdate {
 
     async fn process_event(event: &vehicle::Event, conn: &mut PgConnection) -> Result<()> {
         match event {
-            vehicle::Event::ProcessDone(id) => {
-                query(
+            vehicle::Event::ProcessDone {
+                vehicle_id: _,
+                vehicle_skill,
+                task_id,
+            } => {
+                let table_name = match vehicle_skill {
+                    Skill::Item => "item",
+                    Skill::Fluid => "fluid",
+                    Skill::UseTool(_) => "use_tool",
+                };
+                let query_sql = format!(
                     "
-                    UPDATE item
+                    UPDATE {}
                     SET state = 'completed'
-                    WHERE vehicle_id = $1;
+                    WHERE id = $1;
                 ",
-                )
-                .bind(id)
-                .execute(conn)
-                .await
-                .map_err(Error::Db)?;
+                    table_name
+                );
+                query(&query_sql)
+                    .bind(task_id)
+                    .execute(conn)
+                    .await
+                    .map_err(Error::Db)?;
             }
-            vehicle::Event::ProcessStart(_) => {}
-            vehicle::Event::ChargeStart(_) | vehicle::Event::ChargeDone(_) => {}
+            vehicle::Event::ProcessStart {
+                vehicle_id,
+                vehicle_skill,
+                task_id,
+            } => {
+                let table_name = match vehicle_skill {
+                    Skill::Item => "item",
+                    Skill::Fluid => "fluid",
+                    Skill::UseTool(_) => "use_tool",
+                };
+                let query_sql = format!(
+                    "
+                    UPDATE {}
+                    SET vehicle_id = $1,state = 'processing'
+                    WHERE id = $2;
+                ",
+                    table_name
+                );
+                sqlx::query(&query_sql)
+                    .bind(vehicle_id)
+                    .bind(task_id)
+                    .execute(conn)
+                    .await
+                    .map_err(Error::Db)?;
+            }
+            vehicle::Event::ChargeStart | vehicle::Event::ChargeDone => {}
         }
 
         Ok(())

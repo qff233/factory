@@ -28,5 +28,6 @@ WHERE id = 1;
 
 UPDATE item
 SET state = 'completed'
-WHERE id = 7;
+WHERE vehicle_id = 2500
+LIMIT 1;
 SELECT * FROM item; 

@@ -27,10 +27,18 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub enum Event {
-    ProcessStart(i32),
-    ProcessDone(i32),
-    ChargeStart(i32),
-    ChargeDone(i32),
+    ProcessStart {
+        vehicle_id: i32,
+        vehicle_skill: Skill,
+        task_id: i32,
+    },
+    ProcessDone {
+        vehicle_id: i32,
+        vehicle_skill: Skill,
+        task_id: i32,
+    },
+    ChargeStart,
+    ChargeDone,
 }
 
 #[derive(Debug)]
@@ -53,6 +61,7 @@ pub struct Vehicle {
     overtime: Timeout,
     track_graph: Arc<Graph>,
     node: Option<Arc<track::Node>>,
+    current_task_id: Option<i32>,
     sender: Option<mpsc::Sender<Event>>,
 }
 
@@ -67,6 +76,7 @@ impl Vehicle {
             skill,
             track_graph,
             node: None,
+            current_task_id: None,
             sender: None,
         }
     }
@@ -288,12 +298,20 @@ impl Vehicle {
                         return action;
                     }
                     *state = State::ProcessDone;
-                    Self::send_event(&mut self.sender, Event::ProcessDone(self.id)).await;
+                    Self::send_event(
+                        &mut self.sender,
+                        Event::ProcessDone {
+                            vehicle_id: self.id,
+                            vehicle_skill: self.skill.clone(),
+                            task_id: self.current_task_id.unwrap(),
+                        },
+                    )
+                    .await;
                 }
                 State::Parking(actions) => {
                     if require_charge {
                         self.charging(&mut state).await.ok()?;
-                        Self::send_event(&mut self.sender, Event::ChargeStart(self.id)).await;
+                        Self::send_event(&mut self.sender, Event::ChargeStart).await;
                     } else {
                         let action = Self::next_action(current_position, &mut self.node, actions);
                         if action.is_some() {
@@ -310,7 +328,7 @@ impl Vehicle {
 
                     if current_battery_level >= 0.95 {
                         *state = State::ChargeDone;
-                        Self::send_event(&mut self.sender, Event::ChargeDone(self.id)).await;
+                        Self::send_event(&mut self.sender, Event::ChargeDone).await;
                     } else {
                         return None;
                     }
@@ -318,7 +336,7 @@ impl Vehicle {
                 State::InitDone => {
                     if require_charge {
                         self.charging(&mut state).await.ok()?;
-                        Self::send_event(&mut self.sender, Event::ChargeStart(self.id)).await;
+                        Self::send_event(&mut self.sender, Event::ChargeStart).await;
                     } else {
                         self.parking(&mut state).await.ok()?;
                     }
@@ -327,9 +345,10 @@ impl Vehicle {
                     self.parking(&mut state).await.ok()?;
                 }
                 State::ProcessDone => {
+                    self.current_task_id = None;
                     if require_charge {
                         self.charging(&mut state).await.ok()?;
-                        Self::send_event(&mut self.sender, Event::ChargeStart(self.id)).await;
+                        Self::send_event(&mut self.sender, Event::ChargeStart).await;
                     } else {
                         self.parking(&mut state).await.ok()?;
                     }
@@ -337,7 +356,7 @@ impl Vehicle {
                 State::ParkDone => {
                     if require_charge {
                         self.charging(&mut state).await.ok()?;
-                        Self::send_event(&mut self.sender, Event::ChargeStart(self.id)).await;
+                        Self::send_event(&mut self.sender, Event::ChargeStart).await;
                     } else {
                         return None;
                     }
@@ -357,7 +376,7 @@ impl Vehicle {
         }
     }
 
-    pub async fn processing(&mut self, actions: ActionSequence) -> Result<()> {
+    pub async fn processing(&mut self, task_id: i32, actions: ActionSequence) -> Result<()> {
         let mut state = self.state.write().await;
         match &*state {
             State::ParkDone | State::ChargeDone | State::ProcessDone | State::InitDone => {
@@ -366,7 +385,16 @@ impl Vehicle {
                     .await
                     .map_err(Error::Db)?;
                 *state = State::Processing(actions);
-                Self::send_event(&mut self.sender, Event::ProcessStart(self.id)).await;
+                Self::send_event(
+                    &mut self.sender,
+                    Event::ProcessStart {
+                        vehicle_id: self.id,
+                        vehicle_skill: self.skill.clone(),
+                        task_id,
+                    },
+                )
+                .await;
+                self.current_task_id = Some(task_id);
                 Ok(())
             }
             State::Parking(parking_actions) => {
@@ -377,7 +405,16 @@ impl Vehicle {
                         .map_err(Error::Db)?;
                 }
                 *state = State::Processing(actions);
-                Self::send_event(&mut self.sender, Event::ProcessStart(self.id)).await;
+                Self::send_event(
+                    &mut self.sender,
+                    Event::ProcessStart {
+                        vehicle_id: self.id,
+                        vehicle_skill: self.skill.clone(),
+                        task_id,
+                    },
+                )
+                .await;
+                self.current_task_id = Some(task_id);
                 Ok(())
             }
             State::Initing(_) | State::Processing(_) | State::Charging(_) | State::Offline => {
