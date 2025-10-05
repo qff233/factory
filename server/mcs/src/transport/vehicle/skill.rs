@@ -1,13 +1,20 @@
 use crate::constant;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, sqlx::Type)]
+#[sqlx(type_name = "tooltype")]
 pub enum ToolType {
-    Wrench,      // 扳手
-    Solder,      // 烙铁
-    Crowbar,     // 撬棍
+    #[sqlx(rename = "wrench")]
+    Wrench, // 扳手
+    #[sqlx(rename = "solder")]
+    Solder, // 烙铁
+    #[sqlx(rename = "crowbar")]
+    Crowbar, // 撬棍
+    #[sqlx(rename = "screwdriver")]
     Screwdriver, // 螺丝刀
-    WireNipper,  // 剪线钳
-    SoftHammer,  // 软锤
+    #[sqlx(rename = "wire_nipper")]
+    WireNipper, // 剪线钳
+    #[sqlx(rename = "soft_hammer")]
+    SoftHammer, // 软锤
 }
 
 #[derive(Debug, PartialEq)]
@@ -18,7 +25,7 @@ pub enum Skill {
 }
 
 impl Skill {
-    pub fn from_id(id: &u32) -> Self {
+    pub fn from_id(id: &i32) -> Self {
         if constant::ITEM_VEHICLE_ID_RANGE.contains(id) {
             return Self::Item;
         }

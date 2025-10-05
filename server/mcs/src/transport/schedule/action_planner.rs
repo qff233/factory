@@ -1,8 +1,6 @@
-use std::{
-    collections::{HashMap, LinkedList},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
+use sqlx::{PgConnection, prelude::FromRow};
 use tokio::{
     sync::RwLock,
     time::{self},
@@ -12,30 +10,44 @@ use tracing::error;
 use crate::{
     constant,
     transport::{
-        schedule::{Error, Result, Task, TaskList},
-        track,
-        track::Graph,
+        db_manager::DbManager,
+        schedule::{Error, Result},
+        track::{self, Graph},
         vehicle::{ActionSequence, ActionSequenceBuilder, Skill, ToolType, Vehicle},
     },
 };
 
+#[derive(Debug, FromRow)]
+struct ItemFluidRow {
+    id: i32,
+    begin_node_name: String,
+    end_node_name: String,
+}
+
+#[derive(Debug, FromRow)]
+struct UseToolRow {
+    id: i32,
+    end_node_name: String,
+    tool_type: ToolType,
+}
+
 #[derive(Debug)]
 pub struct ActionPlanner {
-    vehicles: Arc<RwLock<HashMap<u32, Vehicle>>>,
+    vehicles: Arc<RwLock<HashMap<i32, Vehicle>>>,
     track_graph: Arc<Graph>,
-    pending_tasks: Arc<RwLock<TaskList>>,
+    db: Arc<DbManager>,
 }
 
 impl ActionPlanner {
     pub fn run(
-        vehicles: Arc<RwLock<HashMap<u32, Vehicle>>>,
+        vehicles: Arc<RwLock<HashMap<i32, Vehicle>>>,
         track_graph: Arc<Graph>,
-        pending_tasks: Arc<RwLock<TaskList>>,
+        db: Arc<DbManager>,
     ) {
         let planner = Self {
             vehicles,
             track_graph,
-            pending_tasks,
+            db,
         };
         tokio::spawn(async move { planner.task().await });
     }
@@ -45,7 +57,12 @@ impl ActionPlanner {
             time::interval(time::Duration::from_secs(constant::VEHICLE_SCHEDULE_TIME));
         loop {
             interval.tick().await;
-            self.plan().await;
+            if let Err(e) = self.plan().await {
+                if let Error::VehicleBusy = e {
+                } else {
+                    error!("ActionPlanner suffer error: {:#?}", e);
+                }
+            }
         }
     }
 
@@ -53,8 +70,8 @@ impl ActionPlanner {
         &self,
         to: &str,
         skill: Skill,
-    ) -> Option<(u32, track::Path)> {
-        let mut result: Vec<(u32, track::Path)> = Vec::new();
+    ) -> Option<(i32, track::Path)> {
+        let mut result: Vec<(i32, track::Path)> = Vec::new();
         for (id, vehicle) in self.vehicles.read().await.iter() {
             if skill != *vehicle.skill() || !vehicle.idle().await {
                 continue;
@@ -74,7 +91,7 @@ impl ActionPlanner {
         &self,
         begin_node_name: &str,
         end_node_name: &str,
-    ) -> Result<(u32, ActionSequence)> {
+    ) -> Result<(i32, ActionSequence)> {
         let (id, to_begin_path) = self
             .find_idle_vehicle_shortest_path_by_skill(begin_node_name, Skill::Item)
             .await
@@ -83,8 +100,7 @@ impl ActionPlanner {
             .track_graph
             .find_path(begin_node_name, end_node_name)
             .await
-            .map_err(|_| Error::PathFind)?;
-
+            .map_err(Error::Db)?;
         Ok((
             id,
             ActionSequenceBuilder::new()
@@ -100,7 +116,7 @@ impl ActionPlanner {
         &self,
         begin_node_name: &str,
         end_node_name: &str,
-    ) -> Result<(u32, ActionSequence)> {
+    ) -> Result<(i32, ActionSequence)> {
         let (id, to_begin_path) = self
             .find_idle_vehicle_shortest_path_by_skill(begin_node_name, Skill::Fluid)
             .await
@@ -110,15 +126,23 @@ impl ActionPlanner {
             .track_graph
             .find_path(begin_node_name, end_node_name)
             .await
-            .map_err(|_| Error::PathFind)?;
+            .map_err(Error::Db)?;
+
+        let to_shipping_dock_path = self
+            .track_graph
+            .find_shipping_dock_path(end_node_name)
+            .await
+            .map_err(Error::Db)?;
 
         Ok((
             id,
             ActionSequenceBuilder::new()
                 .move_path(&to_begin_path)
-                .drain()
+                .suck()
                 .move_path(&begin_to_end_path)
                 .fill()
+                .move_path(&to_shipping_dock_path)
+                .drop()
                 .build(),
         ))
     }
@@ -127,7 +151,7 @@ impl ActionPlanner {
         &self,
         node_name: &str,
         tool_type: ToolType,
-    ) -> Result<(u32, ActionSequence)> {
+    ) -> Result<(i32, ActionSequence)> {
         let (id, to_end_path) = self
             .find_idle_vehicle_shortest_path_by_skill(node_name, Skill::UseTool(tool_type))
             .await
@@ -142,79 +166,226 @@ impl ActionPlanner {
         ))
     }
 
-    async fn plan_for_vehicle(&self, task: &Task) -> Result<()> {
-        match task {
-            Task::TransItem {
-                begin_node_name,
-                end_node_name,
-            } => {
-                let (id, actions) = self
-                    .trans_item_actions(begin_node_name, end_node_name)
-                    .await?;
+    async fn update_state_processing(
+        &self,
+        conn: &mut PgConnection,
+        table_name: &str,
+        vehicle_id: i32,
+        task_id: i32,
+    ) -> Result<()> {
+        let query_sql = format!(
+            "
+            UPDATE {}
+            SET vehicle_id = $1,state = 'processing'
+            WHERE id = $2;
+        ",
+            table_name
+        );
+        sqlx::query(&query_sql)
+            .bind(vehicle_id)
+            .bind(task_id)
+            .execute(conn)
+            .await
+            .map_err(Error::Db)?;
+        Ok(())
+    }
 
-                self.vehicles
-                    .write()
-                    .await
-                    .get_mut(&id)
-                    .ok_or(Error::VehicleBusy)?
-                    .processing(actions)
-                    .await
-                    .map_err(|_| Error::VehicleBusy)?
+    async fn get_item_rows(&self, conn: &mut PgConnection) -> Result<Vec<ItemFluidRow>> {
+        sqlx::query_as::<_, ItemFluidRow>(
+            "
+            SELECT id,begin_node_name,end_node_name
+            FROM item
+            WHERE state = 'pending'
+            LIMIT 20;
+        ",
+        )
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(Error::Db)
+    }
+
+    async fn get_fluid_rows(&self, conn: &mut PgConnection) -> Result<Vec<ItemFluidRow>> {
+        sqlx::query_as::<_, ItemFluidRow>(
+            "
+            SELECT id, begin_node_name, end_node_name
+            FROM fluid
+            WHERE state = 'pending'
+            LIMIT 20;
+        ",
+        )
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(Error::Db)
+    }
+
+    async fn get_use_tool_rows(&self, conn: &mut PgConnection) -> Result<Vec<UseToolRow>> {
+        sqlx::query_as::<_, UseToolRow>(
+            "
+            SELECT id, end_node_name, tool_type
+            FROM use_tool
+            WHERE state = 'pending'
+            LIMIT 20;
+        ",
+        )
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(Error::Db)
+    }
+
+    async fn plan_tran_item(
+        &self,
+        item_rows: Vec<ItemFluidRow>,
+        conn: &mut PgConnection,
+    ) -> Result<()> {
+        for row in item_rows {
+            let (vehicle_id, actions) = self
+                .trans_item_actions(&row.begin_node_name.trim(), &row.end_node_name.trim())
+                .await?;
+
+            self.vehicles
+                .write()
+                .await
+                .get_mut(&vehicle_id)
+                .ok_or(Error::VehicleBusy)?
+                .processing(actions)
+                .await
+                .map_err(|_| Error::VehicleBusy)?;
+            self.update_state_processing(conn, "item", vehicle_id, row.id)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn plan_tran_fluid(
+        &self,
+        item_rows: Vec<ItemFluidRow>,
+        conn: &mut PgConnection,
+    ) -> Result<()> {
+        for row in item_rows {
+            let (vehicle_id, actions) = self
+                .trans_fluid_actions(&row.begin_node_name.trim(), &row.end_node_name.trim())
+                .await?;
+
+            self.vehicles
+                .write()
+                .await
+                .get_mut(&vehicle_id)
+                .ok_or(Error::VehicleBusy)?
+                .processing(actions)
+                .await
+                .map_err(|_| Error::VehicleBusy)?;
+            self.update_state_processing(&mut *conn, "fluid", vehicle_id, row.id)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn plan_use_tool(
+        &self,
+        item_rows: Vec<UseToolRow>,
+        conn: &mut PgConnection,
+    ) -> Result<()> {
+        for row in item_rows {
+            let (vehicle_id, actions) = self
+                .use_tool_actions(&row.end_node_name.trim(), row.tool_type)
+                .await?;
+
+            self.vehicles
+                .write()
+                .await
+                .get_mut(&vehicle_id)
+                .ok_or(Error::VehicleBusy)?
+                .processing(actions)
+                .await
+                .map_err(|_| Error::VehicleBusy)?;
+            self.update_state_processing(&mut *conn, "use_tool", vehicle_id, row.id)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn plan(&mut self) -> Result<()> {
+        let mut conn = self.db.transport().await.map_err(Error::Db)?;
+        let item_rows = self.get_item_rows(&mut *conn).await?;
+        if let Err(e) = self.plan_tran_item(item_rows, &mut *conn).await {
+            if let Error::VehicleBusy = e {
+            } else {
+                error!("plan() suffer error: {:#?}", e);
             }
-            Task::TransFluid {
-                begin_node_name,
-                end_node_name,
-            } => {
-                let (id, actions) = self
-                    .trans_fluid_actions(begin_node_name, end_node_name)
-                    .await?;
+        }
 
-                self.vehicles
-                    .write()
-                    .await
-                    .get_mut(&id)
-                    .ok_or(Error::VehicleBusy)?
-                    .processing(actions)
-                    .await
-                    .map_err(|_| Error::VehicleBusy)?
+        let fluid_rows = self.get_fluid_rows(&mut *conn).await?;
+        if let Err(e) = self.plan_tran_fluid(fluid_rows, &mut *conn).await {
+            if let Error::VehicleBusy = e {
+            } else {
+                error!("plan() suffer error: {:#?}", e);
             }
-            Task::UseTool {
-                end_node_name,
-                tool_type,
-            } => {
-                let (id, actions) = self
-                    .use_tool_actions(end_node_name, tool_type.clone())
-                    .await?;
+        }
 
-                self.vehicles
-                    .write()
-                    .await
-                    .get_mut(&id)
-                    .ok_or(Error::VehicleBusy)?
-                    .processing(actions)
-                    .await
-                    .map_err(|_| Error::VehicleBusy)?
+        let use_tool_rows = self.get_use_tool_rows(&mut *conn).await?;
+        if let Err(e) = self.plan_use_tool(use_tool_rows, &mut *conn).await {
+            if let Error::VehicleBusy = e {
+            } else {
+                error!("plan() suffer error: {:#?}", e);
             }
         }
 
         Ok(())
     }
+}
 
-    async fn plan_from_tasks(&self, tasks: &mut LinkedList<Task>) {
-        while let Some(task) = tasks.front() {
-            match self.plan_for_vehicle(task).await {
-                Ok(_) => {
-                    tasks.pop_front();
-                }
-                Err(_) => break,
-            }
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use dotenvy::dotenv;
+    use sqlx::postgres::PgPoolOptions;
+    use tokio::sync::RwLock;
+
+    use crate::transport::{
+        db_manager::DbManager, schedule::action_planner::ActionPlanner, track::Graph,
+        vehicle::Vehicle,
+    };
+
+    #[tokio::test]
+    async fn get_rows() {
+        dotenv().ok();
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+        println!("Connecting to database: {}", database_url);
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&database_url)
+            .await
+            .expect("Failed to create pool");
+
+        let db = DbManager::new(pool);
+        let vehicles = Arc::new(RwLock::new(HashMap::new()));
+        let track_graph = Arc::new(Graph::new(db.clone()).await);
+        {
+            vehicles
+                .write()
+                .await
+                .insert(2500, Vehicle::new(2500, track_graph.clone()).await);
         }
-    }
 
-    async fn plan(&mut self) {
-        let mut tasks = self.pending_tasks.write().await;
-        self.plan_from_tasks(&mut tasks.trans_item_task).await;
-        self.plan_from_tasks(&mut tasks.trans_fluid_task).await;
-        self.plan_from_tasks(&mut tasks.use_tool_task).await;
+        // let _a = sqlx::query_as::<_, ItemFluidRow>(
+        //     "
+        //     SELECT id,begin_node_name,end_node_name
+        //     FROM item
+        //     WHERE state = 'pending'
+        //     LIMIT 20;
+        // ",
+        // )
+        // .fetch_all(&mut *db.transport().await.unwrap())
+        // .await
+        // .unwrap();
+
+        let mut action_planner = ActionPlanner {
+            db,
+            vehicles,
+            track_graph,
+        };
+
+        action_planner.plan().await.unwrap();
     }
 }

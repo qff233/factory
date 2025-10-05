@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, mpsc};
 use tracing::error;
 
 use super::track;
@@ -26,6 +26,13 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+pub enum Event {
+    ProcessStart(i32),
+    ProcessDone(i32),
+    ChargeStart(i32),
+    ChargeDone(i32),
+}
+
 #[derive(Debug)]
 enum State {
     Initing(ActionSequence),
@@ -40,16 +47,17 @@ enum State {
 }
 
 pub struct Vehicle {
-    id: u32,
+    id: i32,
     state: Arc<RwLock<State>>,
     skill: Skill,
     overtime: Timeout,
     track_graph: Arc<Graph>,
     node: Option<Arc<track::Node>>,
+    sender: Option<mpsc::Sender<Event>>,
 }
 
 impl Vehicle {
-    pub async fn new(id: u32, track_graph: Arc<Graph>) -> Self {
+    pub async fn new(id: i32, track_graph: Arc<Graph>) -> Self {
         let skill = Skill::from_id(&id);
         let state = Arc::new(RwLock::new(State::Offline));
         Self {
@@ -59,7 +67,12 @@ impl Vehicle {
             skill,
             track_graph,
             node: None,
+            sender: None,
         }
+    }
+
+    pub fn set_event_sender(&mut self, sender: mpsc::Sender<Event>) {
+        self.sender = Some(sender)
     }
 
     pub async fn offline(&mut self) {
@@ -275,10 +288,12 @@ impl Vehicle {
                         return action;
                     }
                     *state = State::ProcessDone;
+                    Self::send_event(&mut self.sender, Event::ProcessDone(self.id)).await;
                 }
                 State::Parking(actions) => {
                     if require_charge {
                         self.charging(&mut state).await.ok()?;
+                        Self::send_event(&mut self.sender, Event::ChargeStart(self.id)).await;
                     } else {
                         let action = Self::next_action(current_position, &mut self.node, actions);
                         if action.is_some() {
@@ -295,6 +310,7 @@ impl Vehicle {
 
                     if current_battery_level >= 0.95 {
                         *state = State::ChargeDone;
+                        Self::send_event(&mut self.sender, Event::ChargeDone(self.id)).await;
                     } else {
                         return None;
                     }
@@ -302,6 +318,7 @@ impl Vehicle {
                 State::InitDone => {
                     if require_charge {
                         self.charging(&mut state).await.ok()?;
+                        Self::send_event(&mut self.sender, Event::ChargeStart(self.id)).await;
                     } else {
                         self.parking(&mut state).await.ok()?;
                     }
@@ -312,6 +329,7 @@ impl Vehicle {
                 State::ProcessDone => {
                     if require_charge {
                         self.charging(&mut state).await.ok()?;
+                        Self::send_event(&mut self.sender, Event::ChargeStart(self.id)).await;
                     } else {
                         self.parking(&mut state).await.ok()?;
                     }
@@ -319,6 +337,7 @@ impl Vehicle {
                 State::ParkDone => {
                     if require_charge {
                         self.charging(&mut state).await.ok()?;
+                        Self::send_event(&mut self.sender, Event::ChargeStart(self.id)).await;
                     } else {
                         return None;
                     }
@@ -326,6 +345,14 @@ impl Vehicle {
                 State::Offline => {
                     self.initing(current_position, &mut state).await.ok()?;
                 }
+            }
+        }
+    }
+
+    async fn send_event(sender: &mut Option<mpsc::Sender<Event>>, event: Event) {
+        if let Some(event_sender) = sender {
+            if let Err(_) = event_sender.send(event).await {
+                *sender = None;
             }
         }
     }
@@ -339,6 +366,7 @@ impl Vehicle {
                     .await
                     .map_err(Error::Db)?;
                 *state = State::Processing(actions);
+                Self::send_event(&mut self.sender, Event::ProcessStart(self.id)).await;
                 Ok(())
             }
             State::Parking(parking_actions) => {
@@ -349,6 +377,7 @@ impl Vehicle {
                         .map_err(Error::Db)?;
                 }
                 *state = State::Processing(actions);
+                Self::send_event(&mut self.sender, Event::ProcessStart(self.id)).await;
                 Ok(())
             }
             State::Initing(_) | State::Processing(_) | State::Charging(_) | State::Offline => {

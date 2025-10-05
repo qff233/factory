@@ -44,8 +44,8 @@ SELECT * FROM
     JOIN nodes AS n_src ON e.begin_node_id = n_src.id
     JOIN nodes AS n_tgt ON e.end_node_id = n_tgt.id
 	WHERE is_lock=false',
-		(SELECT id FROM nodes WHERE name = 'S3'),
 		(SELECT id FROM nodes WHERE name = 'S2'),
+		(SELECT id FROM nodes WHERE name = 'S1'),
 		true)
 )
 SELECT

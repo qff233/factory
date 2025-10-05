@@ -20,4 +20,13 @@ impl DbManager {
             .unwrap();
         Ok(conn)
     }
+
+    pub async fn transport(&self) -> Result<PoolConnection<Postgres>, sqlx::Error> {
+        let mut conn = self.pool.acquire().await?;
+        query("SET search_path TO transport;")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        Ok(conn)
+    }
 }

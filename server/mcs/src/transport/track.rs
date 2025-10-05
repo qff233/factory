@@ -270,12 +270,15 @@ mod tests {
     #[tokio::test]
     async fn find_path() {
         let track_graph = get_track_graph().await;
-        let path = track_graph.find_path("S3", "S2").await.unwrap();
+        let path = track_graph.find_path("S2", "S1").await.unwrap();
 
-        assert_eq!(path.0.get(0).unwrap().name, "S3");
-        assert_eq!(path.0.get(1).unwrap().name, "A5");
-        assert_eq!(path.0.get(2).unwrap().name, "A6");
-        assert_eq!(path.0.get(3).unwrap().name, "S2");
+        assert_eq!(path.0.get(0).unwrap().name, "S2");
+        assert_eq!(path.0.get(1).unwrap().name, "A6");
+        assert_eq!(path.0.get(2).unwrap().name, "A2");
+        assert_eq!(path.0.get(3).unwrap().name, "A1");
+        assert_eq!(path.0.get(4).unwrap().name, "A4");
+        assert_eq!(path.0.get(5).unwrap().name, "A3");
+        assert_eq!(path.0.get(6).unwrap().name, "S1");
 
         let path = track_graph
             .find_path_by_type("S3", &NodeType::ParkingStation)

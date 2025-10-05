@@ -7,7 +7,6 @@ pub enum Action {
     Move(Arc<track::Node>),
     Drop,
     Suck,
-    Drain,
     Fill,
     Use,
 }
@@ -60,11 +59,6 @@ impl ActionSequenceBuilder {
 
     pub fn suck(mut self) -> Self {
         self.0.push_back(Action::Suck);
-        self
-    }
-
-    pub fn drain(mut self) -> Self {
-        self.0.push_back(Action::Drain);
         self
     }
 
