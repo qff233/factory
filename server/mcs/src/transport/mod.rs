@@ -1,6 +1,5 @@
 pub mod prelude;
 mod schedule;
-// mod server;
-mod db_manager;
+mod server;
 mod track;
 mod vehicle;

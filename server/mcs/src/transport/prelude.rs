@@ -1,4 +1,6 @@
-#[derive(Debug)]
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
 pub(crate) struct Position(pub f64, pub f64, pub f64);
 
 impl PartialEq for Position {

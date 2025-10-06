@@ -1,12 +1,12 @@
-use std::{clone, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::{RwLock, mpsc};
 use tracing::warn;
 
 use crate::{
     constant,
+    db_manager::DbManager,
     transport::{
-        db_manager::DbManager,
         prelude::Position,
         schedule::{action_planner::ActionPlanner, state_update::StateUpdate},
         track::Graph,
@@ -37,7 +37,7 @@ impl ScheduleExec {
     }
 
     pub async fn get_action(
-        &mut self,
+        &self,
         id: i32,
         position: impl Into<Position>,
         battery_level: f32,
@@ -66,7 +66,7 @@ impl ScheduleExec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::{db_manager::DbManager, schedule::adder::ScheduleAdder};
+    use crate::transport::schedule::adder::ScheduleAdder;
     use dotenvy::dotenv;
     use sqlx::postgres::PgPoolOptions;
     use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};

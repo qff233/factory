@@ -45,10 +45,12 @@ mod tests {
     use sqlx::postgres::PgPoolOptions;
     use tokio::time;
 
-    use crate::transport::{
+    use crate::{
         db_manager::DbManager,
-        track::Graph,
-        vehicle::{State, Vehicle},
+        transport::{
+            track::Graph,
+            vehicle::{State, Vehicle},
+        },
     };
 
     use super::*;

@@ -19,3 +19,6 @@ tracing-subscriber = { workspace = true, features = [
 tracing-appender = {workspace = true}
 dotenvy = {workspace =  true}
 chrono = {workspace =  true}
+
+[dev-dependencies]
+jsonrpsee = {workspace =  true, features = ["http-client"]}

@@ -2,7 +2,7 @@ use std::{ops::Deref, sync::Arc};
 
 use sqlx::{prelude::FromRow, query, query_as};
 
-use crate::transport::{db_manager::DbManager, prelude::Position};
+use crate::{db_manager::DbManager, transport::prelude::Position};
 
 pub type Result<T> = std::result::Result<T, sqlx::Error>;
 
@@ -239,10 +239,7 @@ mod tests {
     use dotenvy::dotenv;
     use sqlx::postgres::PgPoolOptions;
 
-    use crate::transport::{
-        db_manager::DbManager,
-        track::{Graph, NodeType, Position},
-    };
+    use super::*;
 
     async fn get_track_graph() -> Graph {
         dotenv().ok();

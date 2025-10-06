@@ -9,8 +9,8 @@ use tracing::error;
 
 use crate::{
     constant,
+    db_manager::DbManager,
     transport::{
-        db_manager::DbManager,
         schedule::{Error, Result},
         track::{self, Graph},
         vehicle::{ActionSequence, ActionSequenceBuilder, Skill, ToolType, Vehicle},
@@ -297,16 +297,10 @@ impl ActionPlanner {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, sync::Arc};
+    use super::*;
 
     use dotenvy::dotenv;
     use sqlx::postgres::PgPoolOptions;
-    use tokio::sync::RwLock;
-
-    use crate::transport::{
-        db_manager::DbManager, schedule::action_planner::ActionPlanner, track::Graph,
-        vehicle::Vehicle,
-    };
 
     #[tokio::test]
     async fn get_rows() {

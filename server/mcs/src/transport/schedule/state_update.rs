@@ -1,6 +1,7 @@
+use crate::db_manager::DbManager;
 use crate::transport::schedule::{Error, Result};
+use crate::transport::vehicle;
 use crate::transport::vehicle::Skill;
-use crate::transport::{db_manager::DbManager, vehicle};
 use sqlx::{PgConnection, query};
 use std::sync::Arc;
 use tokio::sync::mpsc;

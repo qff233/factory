@@ -440,7 +440,7 @@ mod tests {
     use dotenvy::dotenv;
     use sqlx::postgres::PgPoolOptions;
 
-    use crate::transport::db_manager::DbManager;
+    use crate::db_manager::DbManager;
 
     use super::*;
 

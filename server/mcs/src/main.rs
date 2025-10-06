@@ -3,6 +3,7 @@ use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, prelude::*};
 
 pub mod constant;
+pub mod db_manager;
 mod transport;
 
 fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {

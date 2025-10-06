@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use sqlx::query;
 
-use crate::transport::db_manager::DbManager;
+use crate::db_manager::DbManager;
 use crate::transport::schedule::{Error, Result};
 use crate::transport::vehicle::ToolType;
 
