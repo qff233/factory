@@ -1,5 +1,6 @@
 local utils = require("ui.utils")
-local gpu = require("component.gpu")
+local component = require("component.init")
+local gpu = component.gpu
 local Widget = require("ui.widget")
 
 ---@class Input: Widget
@@ -16,9 +17,10 @@ Input.__index = setmetatable(Input, Widget)
 ---@param y number
 ---@param width number
 ---@param height number
----@param text string
----@param text_color number
----@param background_color number
+---@param on_submit fun(text: string)
+---@param text string?
+---@param text_color number?
+---@param background_color number?
 function Input.new(x, y, width, height, on_submit, text, text_color, background_color)
     ---@type Input
     local self = setmetatable(Widget.new(x, y, width, height), Input)
@@ -34,28 +36,29 @@ end
 function Input:on_draw()
     local max_length = self.width - 2
 
+    local x, y = self:get_absolute_xy()
     gpu.setBackground(self.background_color)
-    gpu.fill(self.x, self.y, self.width, self.height, " ")
+    gpu.fill(x, y, self.width, self.height, " ")
 
     if self.is_focused then
         gpu.setForeground(self.text_color)
     else
         gpu.setForeground(0x666666)
     end
-    utils.draw_border(self.x, self.y, self.width, self.height)
+    utils.draw_border(x, y, self.width, self.height)
 
     -- 绘制的文本
     local text_start = 1
     local draw_text = self.text
-    if #draw_text > max_length then
+    if utils.utf8len(draw_text) > max_length then
         if self.cursor_pos > max_length then
             text_start = self.cursor_pos - max_length + 1
         end
         draw_text = string.sub(draw_text, text_start, text_start + max_length - 1)
     end
 
-    local x = self.x + 1
-    local y = self.y + math.floor((self.height - 1) / 2)
+    local x = x + 1
+    local y = y + math.floor((self.height - 1) / 2)
     gpu.set(x, y, draw_text)
 
     -- 绘制光标
@@ -64,7 +67,7 @@ function Input:on_draw()
         if cursor_x <= x + self.cursor_pos - text_start then
             gpu.setBackground(self.text_color)
             local cursor_char = " "
-            if cursor_x - x <= #self.text then
+            if cursor_x - x <= utils.utf8len(self.text) then
                 cursor_char = string.sub(self.text, cursor_x - x, cursor_x - x)
             end
             gpu.set(cursor_x, y, cursor_char)
@@ -76,10 +79,11 @@ function Input:parse_event(event)
     if event[1] == "touch" then
         self.dirty = true
         local event_x, event_y = event[3], event[4]
-        if self:contains(event_x + 1, event_y + 1) then
+        local x, y = self:get_absolute_xy()
+        if self:contains(event_x, event_y) then
             self.is_focused = true
-            local relative_x = event_x - self.x
-            self.cursor_pos = math.min(relative_x, #self.text + 1)
+            local relative_x = event_x - x
+            self.cursor_pos = math.min(relative_x, utils.utf8len(self.text) + 1)
             return true
         else
             self.is_focused = false
@@ -91,15 +95,16 @@ function Input:parse_event(event)
         if code == 0x0E then -- 退格键
             if self.cursor_pos > 1 then
                 self.text = string.sub(self.text, 1, self.cursor_pos - 2) .. string.sub(self.text, self.cursor_pos)
+                self.cursor_pos = self.cursor_pos - 1
             end
         elseif code == 0xCB then -- 左键头
             self.cursor_pos = math.max(1, self.cursor_pos - 1)
         elseif code == 0xCD then -- 右键头
-            self.cursor_pos = math.min(#self.text + 1, self.cursor_pos + 1)
+            self.cursor_pos = math.min(utils.utf8len(self.text) + 1, self.cursor_pos + 1)
         elseif code == 0x1C then -- 回车键
             self.on_submit(self.text)
         else -- 字符
-            if #self.text < max_length then
+            if utils.utf8len(self.text) < max_length then
                 self.text = string.sub(self.text, 1, self.cursor_pos - 1) .. char ..
                                 string.sub(self.text, self.cursor_pos)
                 self.cursor_pos = self.cursor_pos + 1

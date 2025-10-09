@@ -1,26 +1,35 @@
 ---@class GPU
-local gpu = {}
+---@field background number
+---@field foreground number
+---@field font_width number
+---@field font_height number
+---@field screen any
+local GPU = {}
 
-function gpu.getResolution()
-    return 80, 50
-end
+function GPU.new()
+    ---@type GPU
+    GPU.background = 0x000000
+    GPU.foreground = 0xFFFFFF
 
-function gpu.getBackground()
-    return 0x000000
-end
+    local font = love.graphics.newFont("font.ttf", 16)
+    GPU.font_width = font:getWidth("1")
+    GPU.font_height = font:getHeight()
+    GPU.screen = love.graphics.newCanvas(80 * GPU.font_width, 25 * GPU.font_height)
 
-function gpu.getForeground()
-    return 0xFFFFFF
+    print(GPU.font_width, GPU.font_height)
+    love.graphics.setFont(font)
+
+    GPU.fill(1, 1, 80, 25, " ")
 end
 
 ---@param color number
-function gpu.setBackground(color)
-    -- print("gpu.setBackground", color)
+function GPU.setBackground(color)
+    GPU.background = color
 end
 
 ---@param color number
-function gpu.setForeground(color)
-    -- print("gpu.setForeground", color)
+function GPU.setForeground(color)
+    GPU.color = color
 end
 
 ---@param x number
@@ -28,16 +37,93 @@ end
 ---@param width number
 ---@param height number
 ---@param char string
-function gpu.fill(x, y, width, height, char)
-    -- print("gpu.fill", x, y, width, height, char)
+function GPU.fill(x, y, width, height, char)
+    local bg_r = bit.band(bit.rshift(GPU.background, 16), 0xFF) / 255
+    local bg_g = bit.band(bit.rshift(GPU.background, 8), 0xFF) / 255
+    local bg_b = bit.band(GPU.background, 0xFF) / 255
+
+    local fg_r = bit.band(bit.rshift(GPU.foreground, 16), 0xFF) / 255
+    local fg_g = bit.band(bit.rshift(GPU.foreground, 8), 0xFF) / 255
+    local fg_b = bit.band(GPU.foreground, 0xFF) / 255
+
+    local font_width = GPU.font_width
+    local font_height = GPU.font_height
+    local pixel_x = (x - 1) * font_width
+    local pixel_y = (y - 1) * font_height
+    local pixel_width = width * font_width
+    local pixel_height = height * font_height
+
+    love.graphics.setCanvas(GPU.screen)
+    love.graphics.setColor(bg_r, bg_g, bg_b)
+    love.graphics.rectangle("fill", pixel_x, pixel_y, pixel_width, pixel_height)
+
+    if char and char ~= " " and char ~= "" then
+        love.graphics.setColor(fg_r, fg_g, fg_b)
+
+        for i = 0, width - 1 do
+            for j = 0, height - 1 do
+                local char_x = pixel_x + i * font_width
+                local char_y = pixel_y + j * font_height
+                love.graphics.print(char, char_x, char_y)
+            end
+        end
+    end
+    love.graphics.setCanvas()
+end
+
+local function utf8len(input)
+    local len = string.len(input)
+    local left = len
+    local cnt = 0
+    local arr = {0, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc}
+    while left ~= 0 do
+        local tmp = string.byte(input, -left)
+        local i = #arr
+        while arr[i] do
+            if tmp >= arr[i] then
+                left = left - i
+                break
+            end
+            i = i - 1
+        end
+        cnt = cnt + 1
+    end
+    return cnt
 end
 
 ---@param x number
 ---@param y number
 ---@param value number
 ---@param vertical? boolean
-function gpu.set(x, y, value, vertical)
-    -- print("gpu.set", x, y, value)
+function GPU.set(x, y, value, vertical)
+    local bg_r = bit.band(bit.rshift(GPU.background, 16), 0xFF) / 255
+    local bg_g = bit.band(bit.rshift(GPU.background, 8), 0xFF) / 255
+    local bg_b = bit.band(GPU.background, 0xFF) / 255
+
+    local fg_r = bit.band(bit.rshift(GPU.foreground, 16), 0xFF) / 255
+    local fg_g = bit.band(bit.rshift(GPU.foreground, 8), 0xFF) / 255
+    local fg_b = bit.band(GPU.foreground, 0xFF) / 255
+
+    local font_width = GPU.font_width
+    local font_height = GPU.font_height
+    local pixel_x = (x - 1) * font_width
+    local pixel_y = (y - 1) * font_height
+
+    local text_width = utf8len(value) * font_width
+    love.graphics.setCanvas(GPU.screen)
+    love.graphics.setColor(bg_r, bg_g, bg_b)
+    love.graphics.rectangle("fill", pixel_x, pixel_y, text_width, font_height)
+
+    love.graphics.setColor(fg_r, fg_g, fg_b)
+    if vertical then
+        for i = 1, utf8len(value) do
+            local char = value:sub(i, i)
+            love.graphics.print(char, pixel_x, pixel_y + (i - 1) * font_height)
+        end
+    else
+        love.graphics.print(value, pixel_x, pixel_y)
+    end
+    love.graphics.setCanvas()
 end
 
-return gpu
+return GPU

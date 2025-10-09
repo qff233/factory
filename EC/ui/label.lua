@@ -1,4 +1,6 @@
-local gpu = require("component.gpu")
+local component = require("component.init")
+local gpu = component.gpu
+local utils = require("ui.utils")
 local Widget = require("ui.widget")
 
 ---@class Label: Widget
@@ -12,9 +14,9 @@ Label.__index = setmetatable(Label, Widget)
 ---@param y number
 ---@param width number
 ---@param height number
----@param text string
----@param text_color number
----@param background_color number
+---@param text string?
+---@param text_color number?
+---@param background_color number?
 function Label.new(x, y, width, height, text, text_color, background_color)
     ---@type Label
     local self = setmetatable(Widget.new(x, y, width, height), Label)
@@ -35,21 +37,23 @@ function Label:on_draw()
     local text_color = self.text_color()
     local background_color = self.background_color()
 
-    if not text or #text == 0 then
+    if not text or utils.utf8len(text) == 0 then
         return
     end
 
+    local x, y = self:get_absolute_xy()
+
     if background_color then
         gpu.setBackground(background_color)
-        gpu.fill(self.x, self.y, self.width, self.height, " ")
+        gpu.fill(x, y, self.width, self.height, " ")
     end
 
     gpu.setForeground(text_color)
-    local x = self.x + math.floor((self.width - #text) / 2)
-    local y = self.y + math.floor((self.height - 1) / 2)
+    local x = x + math.floor((self.width - utils.utf8len(text)) / 2)
+    local y = y + math.floor((self.height - 1) / 2)
     x = math.max(x, math.min(x, x + self.width - 1))
 
-    if #text > self.width then
+    if utils.utf8len(text) > self.width then
         text = string.sub(text, 1, self.width)
     end
 

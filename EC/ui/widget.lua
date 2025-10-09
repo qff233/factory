@@ -62,7 +62,39 @@ function Widget:add_child(widget)
 end
 
 function Widget:contains(x, y)
-    return x >= self.x and x <= self.x + self.width - 1 and y >= self.y and y <= self.y + self.height - 1
+    local sx, sy = self:get_absolute_xy()
+    return x >= sx and x <= sx + self.width - 1 and y >= sy and y <= sy + self.height - 1
+end
+
+function Widget:get_absolute_xy()
+    if self.parent then
+        local x, y = self.parent:get_absolute_xy()
+        return self.x + x - 1, self.y + y - 1
+    else
+        return self.x, self.y
+    end
+end
+
+function Widget:disable_visible()
+    self.visible = false
+    self.dirty = true
+    if self.parent then
+        self.parent.dirty = true
+        for _, widget in ipairs(self.parent.children) do
+            widget.dirty = true
+        end
+    end
+end
+
+function Widget:enable_visible()
+    self.visible = true
+    self.dirty = true
+    if self.parent then
+        self.parent.dirty = true
+        for _, widget in ipairs(self.parent.children) do
+            widget.dirty = true
+        end
+    end
 end
 
 --- 返回true停止事件的传递

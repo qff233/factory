@@ -1,5 +1,5 @@
 local component = {
-    gpu = require("gpu")
+    gpu = require("component.gpu")
 }
 
 return component
