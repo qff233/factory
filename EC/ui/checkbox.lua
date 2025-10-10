@@ -1,4 +1,4 @@
-local component = require("component.init")
+local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
@@ -54,7 +54,7 @@ function CheckBox:parse_event(event)
     if event[1] == "touch" then
         local event_x, event_y = event[3], event[4]
         if self:contains(event_x, event_y) then
-            self.dirty = true
+            self:set_dirty()
             self.is_checked = not self.is_checked
             self.on_change(self.is_checked)
             return true

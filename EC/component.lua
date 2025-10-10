@@ -1,3 +1,5 @@
+local GPU = {}
+
 ---@class GPU
 ---@field background number
 ---@field foreground number
@@ -126,4 +128,8 @@ function GPU.set(x, y, value, vertical)
     love.graphics.setCanvas()
 end
 
-return GPU
+local component = {
+    gpu = GPU
+}
+
+return component

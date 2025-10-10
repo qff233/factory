@@ -1,4 +1,4 @@
-local component = require("component.init")
+local component = require("component")
 local gpu = component.gpu
 
 local utils = {}
@@ -20,7 +20,7 @@ function utils.utf8len(input)
     if not input then
         return 0
     end
-    local len = string.len(input)
+    local len = #input
     local left = len
     local cnt = 0
     local arr = {0, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc}

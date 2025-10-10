@@ -1,4 +1,4 @@
-local component = require("component.init")
+local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
@@ -17,17 +17,18 @@ Label.__index = setmetatable(Label, Widget)
 ---@param text string?
 ---@param text_color number?
 ---@param background_color number?
+---@return Label
 function Label.new(x, y, width, height, text, text_color, background_color)
     ---@type Label
     local self = setmetatable(Widget.new(x, y, width, height), Label)
     self.text = WATCHABLE(text or "").set(function()
-        self.dirty = true
+        self:set_dirty()
     end)
     self.text_color = WATCHABLE(text_color or 0xFFFFFF).set(function()
-        self.dirty = true
+        self:set_dirty()
     end)
     self.background_color = WATCHABLE(background_color).set(function()
-        self.dirty = true
+        self:set_dirty()
     end)
     return self
 end

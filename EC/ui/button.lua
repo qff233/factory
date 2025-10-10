@@ -1,4 +1,4 @@
-local component = require("component.init")
+local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
@@ -27,14 +27,14 @@ function Button.new(x, y, width, height, on_clicked, text, text_color, backgroun
     ---@type Button
     local self = setmetatable(Widget.new(x, y, width, height), Button)
     self.text = WATCHABLE(text or "").set(function()
-        self.dirty = true
+        self:set_dirty()
     end)
     self.text_color = WATCHABLE(text_color or 0xFFFFFF).set(function()
-        self.dirty = true
+        self:set_dirty()
     end)
     self.current_background_color = background_color or 0x333333
     self.background_color = background_color or 0x333333
-    self.pressed_color = pressed_color or 0x222222
+    self.pressed_color = pressed_color or 0x666666
     self.on_clicked = on_clicked
     self.is_clicked = false
     return self
@@ -47,10 +47,10 @@ function Button:on_draw()
     local x, y = self:get_absolute_xy()
     gpu.setBackground(self.current_background_color)
     gpu.fill(x, y, self.width, self.height, " ")
-    utils.draw_border(x, y, self.width, self.height)
 
     -- 渲染字体
     gpu.setForeground(text_color)
+    utils.draw_border(x, y, self.width, self.height)
     local x = x + math.floor((self.width - utils.utf8len(text)) / 2)
     local y = y + math.floor((self.height - 1) / 2)
     x = math.max(x, math.min(x, x + self.width - 1))
@@ -65,7 +65,7 @@ function Button:parse_event(event)
     if event[1] == "touch" then
         local event_x, event_y = event[3], event[4]
         if self:contains(event_x, event_y) then
-            self.dirty = true
+            self:set_dirty()
             self.current_background_color = self.pressed_color
             self.on_clicked()
             self.is_clicked = true
@@ -73,9 +73,9 @@ function Button:parse_event(event)
         end
     elseif event[1] == "drop" and self.is_clicked then
         self.is_clicked = false
-        local event_x, event_y = event[3], event[4]
-        self.dirty = true
+        self:set_dirty()
         self.current_background_color = self.background_color
+        return true
     end
     return false
 end

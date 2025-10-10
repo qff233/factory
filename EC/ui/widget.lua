@@ -8,6 +8,7 @@
 ---@field enabled boolean  事件接收
 ---@field parent Widget?
 ---@field children Widget[]
+---@field id string?
 local Widget = {}
 Widget.__index = Widget
 
@@ -15,6 +16,7 @@ Widget.__index = Widget
 ---@param y number
 ---@param width number
 ---@param height number
+---@return Widget
 function Widget.new(x, y, width, height)
     ---@type Widget
     local self = setmetatable({}, Widget)
@@ -26,6 +28,7 @@ function Widget.new(x, y, width, height)
     self.visible = true
     self.enabled = true
     self.children = {}
+    self.id = ""
     return self
 end
 
@@ -55,10 +58,38 @@ function Widget:handle_evnet(event)
     end
 end
 
+function Widget:set_id(id)
+    self.id = id
+end
+
+function Widget:disable_child_event()
+    for _, widget in ipairs(self.children) do
+        widget.enabled = false
+    end
+end
+
+function Widget:enable_child_event()
+    for _, widget in ipairs(self.children) do
+        widget.enabled = true
+    end
+end
+
 ---@param widget Widget
 function Widget:add_child(widget)
     table.insert(self.children, widget)
     widget.parent = self
+    self:set_dirty()
+end
+
+---@param id string
+function Widget:del_child(id)
+    for i, v in ipairs(self.children) do
+        if v.id and v.id == id then
+            table.remove(self.children, i)
+            break
+        end
+    end
+    self:set_dirty()
 end
 
 function Widget:contains(x, y)
@@ -77,23 +108,22 @@ end
 
 function Widget:disable_visible()
     self.visible = false
-    self.dirty = true
     if self.parent then
-        self.parent.dirty = true
-        for _, widget in ipairs(self.parent.children) do
-            widget.dirty = true
-        end
+        self.parent:set_dirty()
     end
 end
 
 function Widget:enable_visible()
     self.visible = true
-    self.dirty = true
     if self.parent then
-        self.parent.dirty = true
-        for _, widget in ipairs(self.parent.children) do
-            widget.dirty = true
-        end
+        self.parent:set_dirty()
+    end
+end
+
+function Widget:set_dirty()
+    self.dirty = true
+    for _, widget in ipairs(self.children) do
+        widget:set_dirty(true)
     end
 end
 

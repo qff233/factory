@@ -1,4 +1,4 @@
-local component = require("component.init")
+local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
@@ -21,7 +21,7 @@ function Panel.new(x, y, width, height, title, border_color, background_color)
     ---@type Panel
     local self = setmetatable(Widget.new(x, y, width, height), Panel)
     self.title = title
-    self.border_color = border_color
+    self.border_color = border_color or 0xFFFFFF
     self.background_color = background_color or 0x000000
     return self
 end

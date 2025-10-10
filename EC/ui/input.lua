@@ -1,5 +1,5 @@
 local utils = require("ui.utils")
-local component = require("component.init")
+local component = require("component")
 local gpu = component.gpu
 local Widget = require("ui.widget")
 
@@ -77,7 +77,7 @@ end
 
 function Input:parse_event(event)
     if event[1] == "touch" then
-        self.dirty = true
+        self:set_dirty()
         local event_x, event_y = event[3], event[4]
         local x, y = self:get_absolute_xy()
         if self:contains(event_x, event_y) then
@@ -89,7 +89,7 @@ function Input:parse_event(event)
             self.is_focused = false
         end
     elseif self.is_focused and event[1] == "key_down" then
-        self.dirty = true
+        self:set_dirty()
         local char, code = event[3], event[4]
         local max_length = self.width - 2
         if code == 0x0E then -- 退格键
@@ -105,7 +105,7 @@ function Input:parse_event(event)
             self.on_submit(self.text)
         else -- 字符
             if utils.utf8len(self.text) < max_length then
-                self.text = string.sub(self.text, 1, self.cursor_pos - 1) .. char ..
+                self.text = string.sub(self.text, 1, self.cursor_pos - 1) .. string.char(char) ..
                                 string.sub(self.text, self.cursor_pos)
                 self.cursor_pos = self.cursor_pos + 1
             end
