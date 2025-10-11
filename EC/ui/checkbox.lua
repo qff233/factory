@@ -2,6 +2,7 @@ local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
+local Unicode = require("unicode")
 
 ---@class CheckBox : Widget
 ---@field text string
@@ -25,7 +26,7 @@ CheckBox.__index = setmetatable(CheckBox, Widget)
 ---@param checked_color number?
 function CheckBox.new(x, y, on_change, is_checked, text, text_color, backgroud_color, unchecked_color, checked_color)
     ---@type CheckBox
-    local self = setmetatable(Widget.new(x, y, 3 + utils.utf8len(text)), CheckBox)
+    local self = setmetatable(Widget.new(x, y, 3 + Unicode.len(text)), CheckBox)
     self.on_change = on_change
     self.text = text or ""
     self.text_color = text_color or 0xFFFFFF

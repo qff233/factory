@@ -5,7 +5,7 @@ require("src.main")
 local main_ui = Main()
 
 while true do
-    local event = {Event.pull(0.05)}
+    local event = {Event.pull(0.1)}
     if event then
         main_ui:handle_evnet(event)
     end

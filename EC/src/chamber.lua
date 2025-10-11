@@ -9,6 +9,7 @@ local component = require("component")
 local GT = component.gt_machine
 local Config = require("src.config")
 local WarnWindow = require("src.warn_window")
+local ProcessControl = require("src.process_control")
 
 local Chamber = {}
 
@@ -55,6 +56,7 @@ local function chamber_config_panel(parent_widget, id)
         local result, msg = config:set_chamber(id, chamber)
         if result then
             config:save()
+            ProcessControl.realod_config()
             parent_widget:del_child("panel")
             parent_widget:enable_child_event()
         else
@@ -67,7 +69,7 @@ local function chamber_config_panel(parent_widget, id)
     parent_widget:add_child(pannel)
 end
 
-local chamber_panel = Panel.new(1, 5, 40, 21, "chamber")
+local chamber_panel = Panel.new(1, 5, 40, 21, "舱室")
 
 local chamber1_button = Button.new(11, 14, 10, 5, nil, "C1")
 local chamber2_button = Button.new(21, 14, 10, 5, nil, "C2")

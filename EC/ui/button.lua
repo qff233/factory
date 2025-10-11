@@ -2,6 +2,7 @@ local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
+local unicode = require("unicode")
 
 ---@class Button: Widget
 ---@field text fun(text: string)
@@ -54,12 +55,12 @@ function Button:on_draw()
     -- 渲染字体
     gpu.setForeground(text_color)
     utils.draw_border(x, y, self.width, self.height)
-    local x = x + math.floor((self.width - utils.utf8len(text)) / 2)
+    local x = x + math.floor((self.width - unicode.len(text)) / 2)
     local y = y + math.floor((self.height - 1) / 2)
     x = math.max(x, math.min(x, x + self.width - 1))
 
-    if utils.utf8len(text) > self.width then
-        text = string.sub(text, 1, self.width)
+    if unicode.len(text) > self.width then
+        text = unicode.sub(text, 1, self.width)
     end
     gpu.set(x, y, text)
 end

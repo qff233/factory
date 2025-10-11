@@ -12,7 +12,7 @@ local ProcessControl = require("src.process_control")
 
 local State = {}
 
-local status_panel = Panel.new(41, 5, 40, 21, "state")
+local status_panel = Panel.new(41, 5, 40, 21, "机器状态")
 
 local current_progress_bar = ProgressBar.new(12, 18, 27, 3, 0.0, "current_progress_bar")
 status_panel:add_child(current_progress_bar)
@@ -51,15 +51,15 @@ function State.newUI(ec_panel)
 end
 
 local function get_current_problem_count()
-    return GT.getSensorInformation()[5]:match("§c(%d+)")
+    return tonumber(GT.getSensorInformation()[5]:match("§c(%d+)"))
 end
 
 function State.update()
     if GT.hasWork() then
-        machine_active_label.text("running~~")
+        machine_active_label.text("~~运行中~~")
         machine_active_label.text_color(0x00FF00)
     else
-        machine_active_label.text("idle")
+        machine_active_label.text("空闲")
         machine_active_label.text_color(0xFFFF00)
     end
 
@@ -68,22 +68,22 @@ function State.update()
         if current_problem == 0 then
             current_porblem_label.text(" ")
         else
-            current_porblem_label.text("Please Maintain")
+            current_porblem_label.text("请检修机器!!")
             current_porblem_label.background_color(0xFF0000)
         end
     end
 
-    input_voltage_label.text("Voltage: " .. tostring(GT.getInputVoltage()))
+    input_voltage_label.text("当前电压：" .. tostring(GT.getInputVoltage()))
 
-    local input_eu = "Average EU input:  " .. tostring(GT.getEUInputAverage())
+    local input_eu = "平均EU输入：" .. tostring(GT.getEUInputAverage())
     input_eu_label.text(input_eu)
 
-    local input_electric = "Average Electric input:  " .. tostring(GT.getAverageElectricInput())
+    local input_electric = "平均电子输入：" .. tostring(GT.getAverageElectricInput())
     input_electric_label.text(input_electric)
 
     local task_count = task_count_label.text(ProcessControl.get_task_count())
     if task_count > 0 then
-        task_count_label.text("Remain task count: " .. tostring(task_count))
+        task_count_label.text("剩余任务数量：" .. tostring(task_count))
         task_count_label.background_color(0x00FF00)
     else
         task_count_label.text(" ")
@@ -94,9 +94,9 @@ function State.update()
     if recipe_name then
         current_recipe_label.text(recipe_name)
         current_recipe_label.background_color(0x00FF00)
-        remain_input_label.text("Current Reamin Input:" .. tostring(input_count))
+        remain_input_label.text("当前待输入流体量：" .. tostring(input_count))
         remain_input_label.background_color(0x00FF00)
-        remain_inputbus_label.text("Current Reamin InputBus:" .. tostring(inputbus_count))
+        remain_inputbus_label.text("当前待输入物品量：" .. tostring(inputbus_count))
         remain_inputbus_label.background_color(0x00FF00)
     else
         current_recipe_label.text(" ")

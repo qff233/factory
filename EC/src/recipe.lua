@@ -9,6 +9,7 @@ local List = require("ui.list")
 local Config = require("src.config")
 local CheckWindow = require("src.check_window")
 local WarnWindow = require("src.warn_window")
+local ProcessControl = require("src.process_control")
 
 local Recipe = {}
 
@@ -170,6 +171,7 @@ function Recipe.newUI(ec_panel)
             recipe_panel:disable_child_event()
             WarnWindow.newUI(recipe_panel, 2, 7, 68, 9, msg)
         else
+            ProcessControl.realod_config()
             ec_panel:del_child("recipe_panel")
             ec_panel:enable_child_event()
         end

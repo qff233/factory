@@ -206,7 +206,7 @@ end
 local component = {
     gpu = GPU,
     internet = internet,
-    gt_machine = GT
+    gt_machine = GT,
 }
 
 ---@return Transposer

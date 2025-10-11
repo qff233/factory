@@ -2,6 +2,7 @@ local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
+local Unicode = require("unicode")
 
 ---@class Panel: Widget
 ---@field title string
@@ -35,8 +36,8 @@ function Panel:on_draw()
     gpu.setForeground(self.border_color)
     utils.draw_border(x, y, self.width, self.height)
 
-    if utils.utf8len(self.title) > 0 then
-        local title_x = x + math.floor((self.width - utils.utf8len(self.title)) / 2)
+    if Unicode.len(self.title) > 0 then
+        local title_x = x + math.floor((self.width - Unicode.len(self.title)) / 2)
         gpu.set(title_x, y, " " .. self.title .. " ")
     end
 end

@@ -19,18 +19,33 @@ local tasks = {}
 ---@type Transposer[]
 local transposers = {}
 
+local function deepcopy(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in next, orig, nil do
+            copy[deepcopy(orig_key)] = deepcopy(orig_value)
+        end
+        setmetatable(copy, deepcopy(getmetatable(orig)))
+    else
+        copy = orig
+    end
+    return copy
+end
+
 ---@param recipe_name string
 function ProcessControl.add_task(recipe_name, count)
     local count = count or 1
 
     local recipe = recipes[recipe_name]
-    local input = recipe.inputs
-    local inpubus = recipe.inputbus
     for i = 1, count do
+        local input = deepcopy(recipe.inputs)
+        local inputbus = deepcopy(recipe.inputbus)
         table.insert(tasks, {
             recipe_name = recipe_name,
             will_input = input,
-            will_inputbus = inpubus
+            will_inputbus = inputbus
         })
     end
 end
@@ -100,8 +115,13 @@ function ProcessControl.update()
             local transposer_id, tan_slot_index = chamber_map[1], chamber_map[2]
             local transposer = transposers[transposer_id]
             local result, trans_to_input_count = transposer.transferFluid(0, 1, count, tan_slot_index - 1)
-            has_trans = result
+            if result then
+                has_trans = true
+            end
 
+            if type(trans_to_input_count) == "string" then
+                break
+            end
             local remain_count = count - trans_to_input_count
             if remain_count == 0 then
                 current_task.will_input[input_item_name] = nil

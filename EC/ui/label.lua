@@ -2,6 +2,7 @@ local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
+local Unicode = require("unicode")
 
 ---@class Label: Widget
 ---@field text fun(text: string)
@@ -38,7 +39,7 @@ function Label:on_draw()
     local text_color = self.text_color()
     local background_color = self.background_color()
 
-    if not text or utils.utf8len(text) == 0 then
+    if not text or Unicode.len(text) == 0 then
         return
     end
 
@@ -48,12 +49,12 @@ function Label:on_draw()
     gpu.fill(x, y, self.width, self.height, " ")
 
     gpu.setForeground(text_color)
-    local x = x + math.floor((self.width - utils.utf8len(text)) / 2)
+    local x = x + math.floor((self.width - Unicode.len(text)) / 2)
     local y = y + math.floor((self.height - 1) / 2)
     x = math.max(x, math.min(x, x + self.width - 1))
 
-    if utils.utf8len(text) > self.width then
-        text = string.sub(text, 1, self.width)
+    if Unicode.len(text) > self.width then
+        text = Unicode.sub(text, 1, self.width)
     end
 
     gpu.set(x, y, text)

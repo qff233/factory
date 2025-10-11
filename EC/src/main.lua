@@ -12,6 +12,7 @@ local Chamber = require("src.chamber")
 
 local component = require("component")
 local GT = component.gt_machine
+local Computer = require("computer")
 local ProcessControl = require("src.process_control")
 
 local ec_panel = Panel.new(1, 1, 80, 25, "EC")
@@ -46,39 +47,54 @@ local function recipe_button()
         ec_panel:disable_child_event()
         local recipe_panel = Recipe.newUI(ec_panel)
         ec_panel:add_child(recipe_panel)
-    end, "Recipe")
+    end, "配置配方")
     return recipe_button
 end
 
 local function exec_button()
-    local exec_button = Button.new(33, 2, 15, 3, function()
-    end, "Exec")
+    local exec_button = Button.new(20, 2, 15, 3, function()
+    end, "执行配方")
     return exec_button
 end
 
 local power_button = power_button()
-local state_button = state_button()
-local recipe_button = recipe_button()
-local exec_button = exec_button()
 ec_panel:add_child(power_button)
+
+local state_button = state_button()
 ec_panel:add_child(state_button)
+
+local recipe_button = recipe_button()
 ec_panel:add_child(recipe_button)
+
+local exec_button = exec_button()
 ec_panel:add_child(exec_button)
 
 local status_panel = State.newUI(ec_panel)
 local chamber_panel = Chamber.newUI(ec_panel)
 
+local computer_ram_state_progress = ProgressBar.new(37, 2, 17, 3, 1.0)
+computer_ram_state_progress.border_color = 0xFFFFFF
+ec_panel:add_child(computer_ram_state_progress)
+
 ---@return Widget
 function Main()
     ProcessControl.realod_config()
-    ProcessControl.add_task("N1H1", 50)
     return ec_panel
 end
 
 function Update()
+    ProcessControl.update()
     State.update()
 
-    ProcessControl.update()
+    local ram_percent = (Computer.totalMemory() - Computer.freeMemory()) / Computer.totalMemory()
+    if ram_percent > 0.9 then
+        computer_ram_state_progress.bar_color(0xFF0000)
+    elseif ram_percent > 0.6 then
+        computer_ram_state_progress.bar_color(0xFFFF00)
+    else
+        computer_ram_state_progress.bar_color(0x00FF00)
+    end
+    computer_ram_state_progress.value(ram_percent)
 
     if GT.isWorkAllowed() then
         power_button.background_color(0x00FF00)

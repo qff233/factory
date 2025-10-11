@@ -2,6 +2,7 @@ local component = require("component")
 local gpu = component.gpu
 local utils = require("ui.utils")
 local Widget = require("ui.widget")
+local Unicode = require("unicode")
 
 ---@class List: Widget
 ---@field items fun(items: string[])
@@ -49,7 +50,7 @@ function List:on_draw()
     local items = self.items()
 
     gpu.setBackground(self.background_color)
-    gpu.fill(x, y, self.width, self.height)
+    gpu.fill(x, y, self.width, self.height, " ")
 
     gpu.setForeground(self.text_color)
     utils.draw_border(x, y, self.width, self.height)
@@ -71,8 +72,8 @@ function List:on_draw()
         local y_pos = y + i
 
         gpu.setForeground(self.text_color)
-        if utils.utf8len(item) > self.width - 3 then
-            item = string.sub(item, 1, self.width - 3) .. "…"
+        if Unicode.len(item) > self.width - 3 then
+            item = Unicode.sub(item, 1, self.width - 3) .. "…"
         end
         gpu.set(x + 2, y_pos, item)
     end
