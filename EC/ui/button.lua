@@ -7,7 +7,7 @@ local Widget = require("ui.widget")
 ---@field text fun(text: string)
 ---@field text_color fun(text_color: number)
 ---@field current_background_color number
----@field background_color number
+---@field background_color fun(color: number)
 ---@field pressed_color number
 ---@field is_clicked boolean
 ---@field on_clicked fun()
@@ -21,7 +21,7 @@ Button.__index = setmetatable(Button, Widget)
 ---@param on_clicked fun()
 ---@param text string?
 ---@param text_color number?
----@param background_color number?
+---@param background_color fun(color: number)
 ---@field pressed_color number?
 function Button.new(x, y, width, height, on_clicked, text, text_color, background_color, pressed_color)
     ---@type Button
@@ -32,8 +32,11 @@ function Button.new(x, y, width, height, on_clicked, text, text_color, backgroun
     self.text_color = WATCHABLE(text_color or 0xFFFFFF).set(function()
         self:set_dirty()
     end)
+    self.background_color = WATCHABLE(background_color or 0x333333).set(function()
+        self.current_background_color = background_color
+        self:set_dirty()
+    end)
     self.current_background_color = background_color or 0x333333
-    self.background_color = background_color or 0x333333
     self.pressed_color = pressed_color or 0x666666
     self.on_clicked = on_clicked
     self.is_clicked = false
@@ -72,9 +75,10 @@ function Button:parse_event(event)
             return true
         end
     elseif event[1] == "drop" and self.is_clicked then
+        local background_color = self.background_color()
         self.is_clicked = false
         self:set_dirty()
-        self.current_background_color = self.background_color
+        self.current_background_color = background_color
         return true
     end
     return false

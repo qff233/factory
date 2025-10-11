@@ -74,7 +74,7 @@ function GPU.fill(x, y, width, height, char)
 end
 
 local function utf8len(input)
-    local len = string.len(input)
+    local len = #input
     local left = len
     local cnt = 0
     local arr = {0, 0xc0, 0xe0, 0xf0, 0xf8, 0xfc}
@@ -128,8 +128,91 @@ function GPU.set(x, y, value, vertical)
     love.graphics.setCanvas()
 end
 
-local component = {
-    gpu = GPU
+local internet = {}
+
+---@param url string
+---@param data table
+---@param headers table
+---@param method string
+function internet.request(url, data, headers, method)
+    print("request")
+end
+
+local GT = {
+    work_allow = false
 }
+
+---@return number
+function GT.getWorkMaxProgress()
+    return 100
+end
+
+function GT.getSensorInformation()
+    return {"", "", "", "", "问题：§c6§r 效率：§e0.0§r %", ""}
+end
+
+---@return number
+function GT.getWorkProgress()
+    return 50
+end
+
+---@return void
+function GT.setWorkAllowed(value)
+    GT.work_allow = value
+end
+
+---@return boolean
+function GT.isWorkAllowed()
+    return GT.work_allow
+end
+
+function GT.getInputVoltage()
+    return 6666
+end
+
+function GT.hasWork()
+    return true
+end
+
+function GT.getEUInputAverage()
+    return 999
+end
+
+function GT.getAverageElectricInput()
+    return 888
+end
+
+---@class Transposer
+local Transposer = {}
+
+---@field sourceSide number
+---@field sinkSide number
+---@field count number
+---@field sourceTank number
+---@return boolean, number
+function Transposer.transferFluid(sourceSide, sinkSide, count, sourceTank)
+    return true, count
+end
+
+---@field sourceSide number
+---@field sinkSide number
+---@field count number
+---@field sourceSlot number
+---@return number
+function Transposer.transferItem(sourceSide, sinkSide, count, sourceSlot)
+    return count
+end
+
+local component = {
+    gpu = GPU,
+    internet = internet,
+    gt_machine = GT
+}
+
+---@return Transposer
+function component.proxy()
+    return Transposer
+
+end
 
 return component

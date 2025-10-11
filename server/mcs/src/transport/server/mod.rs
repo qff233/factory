@@ -61,12 +61,15 @@ impl Server {
 
 #[cfg(test)]
 mod tests {
+    use std::{thread, time::Duration};
+
     use super::*;
 
     use crate::{db_manager::DbManager, transport::track::Graph};
     use dotenvy::dotenv;
     use jsonrpsee::core::client::ClientT;
     use sqlx::postgres::PgPoolOptions;
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn jsonrpc_server() {
@@ -83,10 +86,12 @@ mod tests {
         let schedule_exec = ScheduleExec::new(track_graph, db).await;
         Server::run("0.0.0.0:5000", schedule_exec).await;
 
-        let url = "http://127.0.0.1:5000".to_string();
-        let client = jsonrpsee::http_client::HttpClient::builder()
-            .build(url)
-            .unwrap();
+        // sleep(Duration::from_secs(9999999999)).await;
+        // thread::sleep(Duration::from_secs(99999999999999));
+        // let url = "http://127.0.0.1:5000".to_string();
+        // let client = jsonrpsee::http_client::HttpClient::builder()
+        //     .build(url)
+        //     .unwrap();
 
         // let json = serde_json::to_string(&params).unwrap();
         // println!("request json: {}", json);

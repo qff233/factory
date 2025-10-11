@@ -36,7 +36,7 @@ function Widget:draw()
     if not self.visible then
         return
     end
-    if self.dirty then
+    if self.dirty and self.enabled then
         self.dirty = false
         self:on_draw()
     end
@@ -65,12 +65,14 @@ end
 function Widget:disable_child_event()
     for _, widget in ipairs(self.children) do
         widget.enabled = false
+        widget:disable_child_event()
     end
 end
 
 function Widget:enable_child_event()
     for _, widget in ipairs(self.children) do
         widget.enabled = true
+        widget:enable_child_event()
     end
 end
 
@@ -78,7 +80,6 @@ end
 function Widget:add_child(widget)
     table.insert(self.children, widget)
     widget.parent = self
-    self:set_dirty()
 end
 
 ---@param id string

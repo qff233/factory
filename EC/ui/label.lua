@@ -44,10 +44,8 @@ function Label:on_draw()
 
     local x, y = self:get_absolute_xy()
 
-    if background_color then
-        gpu.setBackground(background_color)
-        gpu.fill(x, y, self.width, self.height, " ")
-    end
+    gpu.setBackground(background_color or 0x000000)
+    gpu.fill(x, y, self.width, self.height, " ")
 
     gpu.setForeground(text_color)
     local x = x + math.floor((self.width - utils.utf8len(text)) / 2)

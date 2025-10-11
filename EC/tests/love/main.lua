@@ -3,10 +3,9 @@ local gpu = component.gpu
 gpu.new()
 local signal_queue = {}
 
-require("src.recipe_ui")
-require("src.main_ui")
+require("src.main")
 
-local main_ui = MainUI()
+local main_ui = Main()
 function love.load()
     main_ui:draw()
 end
@@ -15,9 +14,9 @@ function love.update()
     if #signal_queue > 0 then
         local signal = table.remove(signal_queue, 1)
         main_ui:handle_evnet(signal)
-        main_ui:draw()
     end
-
+    -- Update()
+    main_ui:draw()
 end
 
 function love.draw()
@@ -32,6 +31,8 @@ function love.mousepressed(x, y, button, istouch, presses)
     local signal = {"touch", "screen_0", -- 模拟的屏幕地址
     charX, charY, button, "player"}
     table.insert(signal_queue, signal)
+
+    Update()
 end
 
 function love.mousereleased(x, y, button, istouch, presses)
@@ -44,6 +45,7 @@ function love.mousereleased(x, y, button, istouch, presses)
 end
 
 function love.keypressed(key, scancode, isrepeat)
+    -- print(scancode)
     local char = key
     if scancode == "return" then
         scancode = 0x1C
@@ -53,6 +55,8 @@ function love.keypressed(key, scancode, isrepeat)
         scancode = 0xCD
     elseif scancode == "backspace" then
         scancode = 0x0E
+    elseif scancode == "space" then
+        char = ' '
     end
     local signal = {"key_down", "keyboard_0", string.byte(char), scancode, "player"}
     table.insert(signal_queue, signal)
