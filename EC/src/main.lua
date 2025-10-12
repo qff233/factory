@@ -6,7 +6,8 @@ local CheckBox = require("ui.checkbox")
 local ProgressBar = require("ui.progressbar")
 local List = require("ui.list")
 
-local Recipe = require("src.recipe")
+local ConfigRecipe = require("src.config_recipe")
+local ExecRecipe = require("src.exec_recipe")
 local State = require("src.state")
 local Chamber = require("src.chamber")
 
@@ -45,14 +46,15 @@ end
 local function recipe_button()
     local recipe_button = Button.new(2, 2, 15, 3, function()
         ec_panel:disable_child_event()
-        local recipe_panel = Recipe.newUI(ec_panel)
-        ec_panel:add_child(recipe_panel)
+        ConfigRecipe.newUI(ec_panel)
     end, "配置配方")
     return recipe_button
 end
 
 local function exec_button()
     local exec_button = Button.new(20, 2, 15, 3, function()
+        ec_panel:disable_child_event()
+        ExecRecipe.newUI(ec_panel)
     end, "执行配方")
     return exec_button
 end
@@ -76,6 +78,8 @@ local computer_ram_state_progress = ProgressBar.new(37, 2, 17, 3, 1.0)
 computer_ram_state_progress.border_color = 0xFFFFFF
 ec_panel:add_child(computer_ram_state_progress)
 
+local chamber_buttons = Chamber.getChamberButton()
+
 ---@return Widget
 function Main()
     ProcessControl.realod_config()
@@ -83,7 +87,12 @@ function Main()
 end
 
 function Update()
-    ProcessControl.update()
+    for k, v in pairs(chamber_buttons) do
+        v.background_color(0x00FF00)
+    end
+    ProcessControl.update(function(chamber_id)
+        chamber_buttons[chamber_id].background_color(0xFFFF00)
+    end)
     State.update()
 
     local ram_percent = (Computer.totalMemory() - Computer.freeMemory()) / Computer.totalMemory()

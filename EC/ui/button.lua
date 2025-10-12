@@ -33,8 +33,8 @@ function Button.new(x, y, width, height, on_clicked, text, text_color, backgroun
     self.text_color = WATCHABLE(text_color or 0xFFFFFF).set(function()
         self:set_dirty()
     end)
-    self.background_color = WATCHABLE(background_color or 0x333333).set(function()
-        self.current_background_color = background_color
+    self.background_color = WATCHABLE(background_color or 0x333333).set(function(new_color)
+        self.current_background_color = new_color
         self:set_dirty()
     end)
     self.current_background_color = background_color or 0x333333

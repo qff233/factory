@@ -9,59 +9,60 @@ local component = require("component")
 local GT = component.gt_machine
 local Config = require("src.config")
 local WarnWindow = require("src.warn_window")
-local ProcessControl = require("src.process_control")
+local ProgressContrl = require("src.process_control")
 
 local Chamber = {}
 
----@param config Config
-local function chamber_slot_label_input(chamber, parent_widget, id)
-    local slot1_label = Label.new(3, 4 + 3 * (id - 1), 2, 1, tostring(id) .. ":")
-    parent_widget:add_child(slot1_label)
-    local slot1_input = Input.new(6, 3 + 3 * (id - 1), 25, 3, function()
-    end, tostring(chamber[id]))
-    parent_widget:add_child(slot1_input)
-    return slot1_input
-end
-
 local function chamber_config_panel(parent_widget, id)
-    local pannel = Panel.new(21, 1, 40, 25, "Input " .. tostring(id) .. " Config Panel")
+    local pannel = Panel.new(21, 1, 40, 25, "输入仓 " .. tostring(id) .. " 号配置面板")
     pannel:set_id("panel")
 
     local config = Config.load()
 
-    local chamber = config:get_chamber(id)
-    local slot1 = chamber_slot_label_input(chamber, pannel, 1)
-    local slot2 = chamber_slot_label_input(chamber, pannel, 2)
-    local slot3 = chamber_slot_label_input(chamber, pannel, 3)
-    local slot4 = chamber_slot_label_input(chamber, pannel, 4)
-    local slot5 = chamber_slot_label_input(chamber, pannel, 5)
-    local slot6 = chamber_slot_label_input(chamber, pannel, 6)
-    local slot7 = chamber_slot_label_input(chamber, pannel, 7)
+    local list = List.new(7, 2, 27, 20, config:get_chamber(id), function()
+    end)
+    pannel:add_child(list)
 
-    local cancel_button = Button.new(33, 18, 6, 3, function()
+    local input = Input.new(7, 22, 21, 3, function(self)
+        local item_name = self.text
+        local result, msg = config:check_in_input_item(item_name)
+        if result then
+            pannel:disable_child_event()
+            WarnWindow.newUI(pannel, -14, 7, 68, 9, msg)
+        else
+            config:add_chamber_item(id, item_name)
+            list.items(config:get_chamber(id))
+        end
+    end)
+    pannel:add_child(input)
+
+    local del_button = Button.new(29, 22, 5, 3, function()
+        local item_name = list:get_item()
+        if item_name then
+            config:del_chamber_item(id, list:get_item())
+            list.items(config:get_chamber(id))
+        else
+            pannel:disable_child_event()
+            WarnWindow.newUI(pannel, -14, 7, 68, 9, "必须选择一个流体")
+        end
+    end, "Del")
+    pannel:add_child(del_button)
+
+    local cancel_button = Button.new(35, 18, 4, 3, function()
         parent_widget:del_child("panel")
         parent_widget:enable_child_event()
     end, "NG")
     pannel:add_child(cancel_button)
 
-    local ok_button = Button.new(33, 22, 6, 3, function()
-        chamber[1] = slot1.text
-        chamber[2] = slot2.text
-        chamber[3] = slot3.text
-        chamber[4] = slot4.text
-        chamber[5] = slot5.text
-        chamber[6] = slot6.text
-        chamber[7] = slot7.text
-
-        local result, msg = config:set_chamber(id, chamber)
+    local ok_button = Button.new(35, 22, 4, 3, function()
+        local result, msg = config:save()
         if result then
-            config:save()
-            ProcessControl.realod_config()
+            ProgressContrl.realod_config()
             parent_widget:del_child("panel")
             parent_widget:enable_child_event()
         else
-            parent_widget:disable_child_event()
-            WarnWindow.newUI(parent_widget, 2, 7, 68, 9, msg)
+            pannel:disable_child_event()
+            WarnWindow.newUI(pannel, -14, 7, 68, 9, msg)
         end
     end, "Ok", 0xFFFFFF, 0xFF0000)
     pannel:add_child(ok_button)
@@ -71,12 +72,12 @@ end
 
 local chamber_panel = Panel.new(1, 5, 40, 21, "舱室")
 
-local chamber1_button = Button.new(11, 14, 10, 5, nil, "C1")
-local chamber2_button = Button.new(21, 14, 10, 5, nil, "C2")
-local chamber3_button = Button.new(11, 9, 10, 5, nil, "C3")
-local chamber4_button = Button.new(21, 9, 10, 5, nil, "C4")
-local chamber5_button = Button.new(11, 4, 10, 5, nil, "C5")
-local chamber6_button = Button.new(21, 4, 10, 5, nil, "C6")
+local chamber1_button = Button.new(11, 14, 10, 5, nil, "C1", 0x000000)
+local chamber2_button = Button.new(21, 14, 10, 5, nil, "C2", 0x000000)
+local chamber3_button = Button.new(11, 9, 10, 5, nil, "C3", 0x000000)
+local chamber4_button = Button.new(21, 9, 10, 5, nil, "C4", 0x000000)
+local chamber5_button = Button.new(11, 4, 10, 5, nil, "C5", 0x000000)
+local chamber6_button = Button.new(21, 4, 10, 5, nil, "C6", 0x000000)
 
 chamber_panel:add_child(chamber1_button)
 chamber_panel:add_child(chamber2_button)
@@ -112,6 +113,10 @@ function Chamber.newUI(ec_panel)
     end
 
     ec_panel:add_child(chamber_panel)
+end
+
+function Chamber.getChamberButton()
+    return {chamber1_button, chamber2_button, chamber3_button, chamber4_button, chamber5_button, chamber6_button}
 end
 
 return Chamber

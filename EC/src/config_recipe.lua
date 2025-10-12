@@ -9,7 +9,7 @@ local List = require("ui.list")
 local Config = require("src.config")
 local CheckWindow = require("src.check_window")
 local WarnWindow = require("src.warn_window")
-local ProcessControl = require("src.process_control")
+local ProgressContrl = require("src.process_control")
 
 local Recipe = {}
 
@@ -23,7 +23,8 @@ local function sub_recipe_widget(recipe_panel, x, y, label, add_item_callback, d
     end)
     widget:add_child(list)
 
-    local input = Input.new(1, 9, 13, 3, function(item_and_count)
+    local input = Input.new(1, 9, 13, 3, function(self)
+        local item_and_count = self.text
         local item, count = string.match(item_and_count, "(%S+)%s+(%S+)")
         if not item or not count or not tonumber(count) then
             recipe_panel:disable_child_event()
@@ -152,15 +153,14 @@ function Recipe.newUI(ec_panel)
         recipe_panel:disable_child_event()
         CheckWindow.newUI(recipe_panel, 21, 8, 31, 7, function()
             config:del_recipes(recipe_name)
-            config:save()
             recipe_list.items(config:get_recipe_names())
         end)
     end, "Del")
     recipe_panel:add_child(del_button)
 
     -- Input
-    local recipe_input = Input.new(9, 21, 14, 3, function(recipe_name)
-        config:add_recipes(recipe_name)
+    local recipe_input = Input.new(9, 21, 14, 3, function(input)
+        config:add_recipes(input.text)
         recipe_list.items(config:get_recipe_names())
     end)
     recipe_panel:add_child(recipe_input)
@@ -171,14 +171,14 @@ function Recipe.newUI(ec_panel)
             recipe_panel:disable_child_event()
             WarnWindow.newUI(recipe_panel, 2, 7, 68, 9, msg)
         else
-            ProcessControl.realod_config()
+            ProgressContrl.realod_config()
             ec_panel:del_child("recipe_panel")
             ec_panel:enable_child_event()
         end
     end, "Quit", 0xFFFFFF, 0xFF0000)
     recipe_panel:add_child(quit_button)
 
-    return recipe_panel
+    ec_panel:add_child(recipe_panel)
 end
 
 return Recipe

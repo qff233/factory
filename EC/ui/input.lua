@@ -18,7 +18,7 @@ Input.__index = setmetatable(Input, Widget)
 ---@param y number
 ---@param width number
 ---@param height number
----@param on_submit fun(text: string)
+---@param on_submit fun(self: Input)
 ---@param text string?
 ---@param text_color number?
 ---@param background_color number?
@@ -182,7 +182,7 @@ function Input:parse_event(event)
         elseif code == 0xCD then -- 右键头
             self.cursor_pos = math.min(unicode.len(self.text) + 1, self.cursor_pos + 1)
         elseif code == 0x1C then -- 回车键
-            self.on_submit(self.text)
+            self.on_submit(self)
         else -- 字符
             local input_char = unicode.char(char)
             local input_char_width = unicode.charWidth(char)

@@ -46,7 +46,7 @@ function Widget:draw()
 end
 
 function Widget:handle_evnet(event)
-    if not self.visible or not self.enabled or self:parse_event(event) then
+    if not self.visible or not self.enabled then
         return false
     end
 
@@ -56,6 +56,8 @@ function Widget:handle_evnet(event)
             return true
         end
     end
+
+    return self:parse_event(event)
 end
 
 function Widget:set_id(id)
@@ -136,6 +138,26 @@ end
 function Widget:on_draw()
 end
 
+local function deep_compare(t1, t2)
+    if type(t1) ~= "table" or type(t2) ~= "table" then
+        return t1 == t2
+    end
+
+    for k, v in pairs(t1) do
+        if not deep_compare(t2[k], v) then
+            return false
+        end
+    end
+
+    for k, v in pairs(t2) do
+        if not deep_compare(t1[k], v) then
+            return false
+        end
+    end
+
+    return true
+end
+
 function WATCHABLE(value)
     local watcher
     local value = value
@@ -148,7 +170,7 @@ function WATCHABLE(value)
                     local old_value = value
                     if new_value ~= old_value then
                         value = new_value
-                        watcher(newValue, oldValue)
+                        watcher(new_value)
                     end
                 end
                 return value

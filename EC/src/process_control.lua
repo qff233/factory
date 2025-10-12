@@ -84,7 +84,7 @@ function ProcessControl.realod_config()
     local chamber = config:get_chambers()
     for i, v in ipairs(chamber) do
         for j, v in ipairs(v) do
-            chamber_inputs[v] = {i, j}
+            chamber_inputs[v] = i
         end
     end
 end
@@ -105,28 +105,42 @@ local function find_match_item_in_box(transposer, item_name)
     return can_find, match_item_slot
 end
 
-function ProcessControl.update()
+local function find_match_item_in_container(transposer, item_name)
+    local can_find = false
+    local match_item_slot = nil
+    for i, item in ipairs(transposer.getFluidInTank(0)) do
+        if item.label == item_name then
+            can_find = true
+            match_item_slot = i - 1
+            break
+        end
+    end
+    return can_find, match_item_slot
+end
+
+---@param callbeck fun(chamber_id)
+function ProcessControl.update(callbeck)
     while #tasks > 0 do
         local has_trans = false
         local current_task = tasks[1]
+
         -- Trans Fluid
         for input_item_name, count in pairs(current_task.will_input) do
-            local chamber_map = chamber_inputs[input_item_name]
-            local transposer_id, tan_slot_index = chamber_map[1], chamber_map[2]
-            local transposer = transposers[transposer_id]
-            local result, trans_to_input_count = transposer.transferFluid(0, 1, count, tan_slot_index - 1)
-            if result then
-                has_trans = true
-            end
+            local chamber_id = chamber_inputs[input_item_name]
+            callbeck(chamber_id)
 
-            if type(trans_to_input_count) == "string" then
-                break
-            end
-            local remain_count = count - trans_to_input_count
-            if remain_count == 0 then
-                current_task.will_input[input_item_name] = nil
-            else
-                current_task.will_input[input_item_name] = count - trans_to_input_count
+            local transposer = transposers[chamber_id]
+            local find_result, match_item_slot = find_match_item_in_container(transposer, input_item_name)
+            if find_result then
+                local result, trans_to_input_count = transposer.transferFluid(0, 1, count, match_item_slot)
+                has_trans = result
+
+                local remain_count = count - trans_to_input_count
+                if remain_count == 0 then
+                    current_task.will_input[input_item_name] = nil
+                else
+                    current_task.will_input[input_item_name] = count - trans_to_input_count
+                end
             end
         end
         -- Trans Item

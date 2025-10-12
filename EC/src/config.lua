@@ -39,17 +39,11 @@ function Config:check()
     local chambers = self.data.chambers
     local inputs = {}
     for i = 1, 6, 1 do
-        for j = 1, 7, 1 do
-            local lique_name = chambers[i][j]
-            if lique_name == "" then
-                goto continue
+        for j, chamber_item in ipairs(chambers[i]) do
+            if inputs[chamber_item] then
+                return false, "流体配置必须唯一，`" .. chambers[i][j] .. "`已经配置过了！"
             end
-            if inputs[lique_name] then
-                return false, "chambers config must unique. " .. chambers[i][j] .. " has same lique"
-            end
-            inputs[lique_name] = true
-
-            ::continue::
+            inputs[chamber_item] = true
         end
     end
 
@@ -58,8 +52,8 @@ function Config:check()
         if recipe.inputs then
             for item_name, count in pairs(recipe.inputs) do
                 if not inputs[item_name] then
-                    return false,
-                        "Inputs of `" .. name .. "` must contain chamber item! [" .. item_name .. "] can't contain"
+                    return false, "`" .. name .. "`配方的输入仓必须包含配置过的流体！`" .. item_name ..
+                        "` 没有包含在内！"
                 end
             end
         end
@@ -69,26 +63,14 @@ end
 
 function Config:check_in_input_item(item_name)
     local chambers = self.data.chambers
-    local inputs = {}
-    for i = 1, 6, 1 do
-        for j = 1, 7, 1 do
-            local lique_name = chambers[i][j]
-            if lique_name == "" then
-                goto continue
+    for i = 1, 6 do
+        for j, lique_name in ipairs(chambers[i]) do
+            if lique_name == item_name then
+                return true, "[" .. i .. "]号已经有相同的流体`" .. chambers[i][j] .. "`!!"
             end
-            if inputs[lique_name] then
-                return false, "chambers config must unique. " .. chambers[i][j] .. " has same lique"
-            end
-            inputs[lique_name] = true
-
-            ::continue::
         end
     end
-    if inputs[item_name] then
-        return true
-    else
-        return false
-    end
+    return false
 end
 
 ---@class Recipe
@@ -201,20 +183,45 @@ function Config:del_recipes(recipe_name)
     self.data.recipes[recipe_name] = nil
 end
 
----@alias Chamber string[]
-
----@return Chamber
-function Config:get_chamber(id)
-    return self.data.chambers[id]
+local function deepcopy(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in next, orig, nil do
+            copy[deepcopy(orig_key)] = deepcopy(orig_value)
+        end
+        setmetatable(copy, deepcopy(getmetatable(orig)))
+    else
+        copy = orig
+    end
+    return copy
 end
 
----@return Chamber[]
+---@return string[]
+function Config:get_chamber(id)
+    return deepcopy(self.data.chambers[id]) or {}
+end
+
+function Config:add_chamber_item(id, item_name)
+    table.insert(self.data.chambers[id], item_name)
+end
+
+function Config:del_chamber_item(id, item_name)
+    for i, v in ipairs(self.data.chambers[id]) do
+        if v == item_name then
+            table.remove(self.data.chambers[id], i)
+        end
+    end
+end
+
+---@return string[][]
 function Config:get_chambers()
     return self.data.chambers
 end
 
 ---@param id string
----@param chamber Chamber
+---@param chamber string[] 
 ---@return boolean, string
 function Config:set_chamber(id, chamber)
     self.data.chambers[id] = chamber

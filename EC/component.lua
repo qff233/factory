@@ -203,10 +203,29 @@ function Transposer.transferItem(sourceSide, sinkSide, count, sourceSlot)
     return count
 end
 
+function Transposer.getFluidInTank(sourceSide)
+    return {{
+        lable = "氢气"
+    }, {
+        lable = "氮气"
+    }}
+end
+
+function Transposer.getAllStacks(sourceSide)
+    local items = {{
+        lable = "氢氧化钠粉"
+    }}
+    local key, current = next(items)
+    return function()
+        key, current = next(items, key)
+        return current
+    end
+end
+
 local component = {
     gpu = GPU,
     internet = internet,
-    gt_machine = GT,
+    gt_machine = GT
 }
 
 ---@return Transposer

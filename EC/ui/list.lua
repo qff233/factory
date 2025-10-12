@@ -5,7 +5,7 @@ local Widget = require("ui.widget")
 local Unicode = require("unicode")
 
 ---@class List: Widget
----@field items fun(items: string[])
+---@field items fun(items: string[]):string[]
 ---@field on_select fun(selected_item: string)
 ---@field text_color number
 ---@field background_color number
@@ -19,7 +19,7 @@ List.__index = setmetatable(List, Widget)
 ---@param width number
 ---@param height number
 ---@param items table
----@param on_select fun(selected_item: any)
+---@param on_select fun(selected_item: string)
 ---@param test_color number
 ---@param background_color number
 ---@return List
