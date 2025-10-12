@@ -3,9 +3,10 @@ local component = require("component")
 
 ---@class Task
 ---@field recipe_name string
----@field will_input table<string, number>
----@field will_inputbus table<string, number>
-local Task = {}
+---@field count_input table<string, number>
+---@field remain_input table<string, number>
+---@field count_inputbus table<string, number>
+---@field remain_inputbus table<string, number>
 
 ---@class ProcessControl
 ---@field tasks Task[]
@@ -15,9 +16,19 @@ local chamber_inputs = {}
 
 ---@type Task[]
 local tasks = {}
-
 ---@type Transposer[]
 local transposers = {}
+
+local is_running = true
+function ProcessControl.turnOn()
+    is_running = true
+end
+function ProcessControl.turnOff()
+    is_running = false
+end
+function ProcessControl.isRunning()
+    return is_running
+end
 
 local function deepcopy(orig)
     local orig_type = type(orig)
@@ -38,15 +49,41 @@ end
 function ProcessControl.add_task(recipe_name, count)
     local count = count or 1
 
+    local has_add_task = false
     local recipe = recipes[recipe_name]
-    for i = 1, count do
-        local input = deepcopy(recipe.inputs)
-        local inputbus = deepcopy(recipe.inputbus)
-        table.insert(tasks, {
+    for _, task in ipairs(tasks) do
+        if task.recipe_name == recipe_name then
+            local has_add_task = true
+            for item_name, item_count in pairs(recipe.inputs) do
+                local remain_count = task.remain_input[item_name] or 0
+                task.count_input[item_name] = task.count_input[item_name] + item_count * count
+                task.remain_input[item_name] = remain_count + item_count * count
+            end
+            for item_name, item_count in pairs(recipe.inputbus) do
+                local remain_count = task.remain_inputbus[item_name] or 0
+                task.count_inputbus[item_name] = task.count_inputbus[item_name] + item_count * count
+                task.remain_inputbus[item_name] = remain_count + item_count * count
+            end
+        end
+    end
+
+    if not has_add_task then
+        ---@type Task
+        local task = {
             recipe_name = recipe_name,
-            will_input = input,
-            will_inputbus = inputbus
-        })
+            count_input = {},
+            remain_input = {},
+            count_inputbus = {},
+            remain_inputbus = {}
+        }
+        for item_name, item_count in pairs(recipe.inputs) do
+            task.count_input[item_name] = item_count * count
+            task.remain_input[item_name] = item_count * count
+        end
+        for item_name, item_count in pairs(recipe.inputbus) do
+            task.count_inputbus[item_name] = item_count * count
+            task.remain_inputbus[item_name] = item_count * count
+        end
     end
 end
 
@@ -55,15 +92,7 @@ end
 function ProcessControl.get_current_task()
     if #tasks > 0 then
         local task = tasks[1]
-        local input_count = 0
-        for _, v in pairs(task.will_input) do
-            input_count = input_count + v
-        end
-        local inputbus_cout = 0
-        for _, v in pairs(task.will_inputbus) do
-            inputbus_cout = inputbus_cout + v
-        end
-        return task.recipe_name, input_count, inputbus_cout
+        return task.recipe_name, task.remain_input, task.remain_inputbus
     end
     return nil
 end
@@ -120,17 +149,25 @@ end
 
 ---@param callbeck fun(chamber_id)
 function ProcessControl.update(callbeck)
+    if not is_running then
+        return
+    end
+
+    --- TODO 添加机台状态  正在加工(记录当前程式，所有材料添加完后，禁止下一次加工，检测机台停止后切空闲)/空闲(开始下一次加工)
+
     while #tasks > 0 do
-        local has_trans = false
+        ---@type Task
         local current_task = tasks[1]
+        local chamber_ids = {}
+        local has_trans = false
 
         -- Trans Fluid
-        for input_item_name, count in pairs(current_task.will_input) do
-            local chamber_id = chamber_inputs[input_item_name]
-            callbeck(chamber_id)
+        for item_name, count in pairs(current_task.remain_input) do
+            local chamber_id = chamber_inputs[item_name]
+            table.insert(chamber_ids, chamber_id)
 
             local transposer = transposers[chamber_id]
-            local find_result, match_item_slot = find_match_item_in_container(transposer, input_item_name)
+            local find_result, match_item_slot = find_match_item_in_container(transposer, item_name)
             if find_result then
                 local result, trans_to_input_count = transposer.transferFluid(0, 1, count, match_item_slot)
                 has_trans = result
@@ -143,10 +180,12 @@ function ProcessControl.update(callbeck)
                 end
             end
         end
+        callbeck(chamber_ids)
+
         -- Trans Item
-        for inputbus_item_name, count in pairs(current_task.will_inputbus) do
+        for item_name, count in pairs(current_task.remain_inputbus) do
             local transposer = transposers[7]
-            local find_result, match_item_slot = find_match_item_in_box(transposer, inputbus_item_name)
+            local find_result, match_item_slot = find_match_item_in_box(transposer, item_name)
             if find_result then
                 local trans_to_inputbus_count = transposer.transferItem(1, 0, count, match_item_slot)
                 if trans_to_inputbus_count > 0 then
@@ -154,22 +193,25 @@ function ProcessControl.update(callbeck)
                 end
                 local remain_count = count - trans_to_inputbus_count
                 if remain_count == 0 then
-                    current_task.will_inputbus[inputbus_item_name] = nil
+                    current_task.will_inputbus[item_name] = nil
                 else
-                    current_task.will_inputbus[inputbus_item_name] = remain_count
+                    current_task.will_inputbus[item_name] = remain_count
                 end
             end
         end
 
+        --- TODO 添加当前机台在线状态 OnlineRemote(远程下单) OnlineLocal(本地下单) Offline(不发送数据)
+        --- TODO 禁止OnlineRemote时手动本地下单
+        --- TODO 上传服务器当前Task状态
         if not next(current_task.will_input) and not next(current_task.will_inputbus) then
             table.remove(tasks, 1)
+            --- TODO 开启设备禁止工作，读取工作状态 得到真正加工完成的时间
         end
 
         if not has_trans then
             break
         end
     end
-    return true
 end
 
 return ProcessControl

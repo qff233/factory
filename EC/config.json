@@ -1,1 +1,45 @@
-{"recipes":{"N1H1":{"outputs":[],"inputs":{"氮气":1000,"氢气":1000},"outputbus":[],"inputbus":{"氢氧化钠粉":1}},"123":{"outputs":[],"outputbus":[],"inputs":[],"inputbus":{"123":123,"哦豁":1}}},"transposer":["843116c0-021c-4bb8-9b83-30b39895ee52","3946026d-5fe5-4e5c-870e-b3186928d69a","d416bacb-3a66-449d-9b39-d148dd453803","2eede008-43f0-4e74-a4ba-308e889e6a6c","80bfa0de-b4b2-4dfa-b395-d0460364d0a9","226f86b4-638e-4b3b-b077-7e1fd961d505","0f338d86-dddb-4f27-95f4-e2772324710a"],"chambers":[["氢气","氮气"],[],[],[],[],[]]}
+{
+    "ToolID": "CR-01",
+    "chambers": [
+        [
+            "氢气",
+            "氮气"
+        ],
+        [],
+        [],
+        [],
+        [],
+        []
+    ],
+    "transposer": [
+        "843116c0-021c-4bb8-9b83-30b39895ee52",
+        "3946026d-5fe5-4e5c-870e-b3186928d69a",
+        "d416bacb-3a66-449d-9b39-d148dd453803",
+        "2eede008-43f0-4e74-a4ba-308e889e6a6c",
+        "80bfa0de-b4b2-4dfa-b395-d0460364d0a9",
+        "226f86b4-638e-4b3b-b077-7e1fd961d505",
+        "0f338d86-dddb-4f27-95f4-e2772324710a"
+    ],
+    "recipes": {
+        "N1H1": {
+            "outputbus": [],
+            "inputs": {
+                "氮气": 1000,
+                "氢气": 1000
+            },
+            "inputbus": {
+                "氢氧化钠粉": 1
+            },
+            "outputs": []
+        },
+        "123": {
+            "outputbus": [],
+            "outputs": [],
+            "inputbus": {
+                "哦豁": 1,
+                "123": 123
+            },
+            "inputs": []
+        }
+    }
+}

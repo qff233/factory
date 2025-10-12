@@ -90,8 +90,10 @@ function Update()
     for k, v in pairs(chamber_buttons) do
         v.background_color(0x00FF00)
     end
-    ProcessControl.update(function(chamber_id)
-        chamber_buttons[chamber_id].background_color(0xFFFF00)
+    ProcessControl.update(function(chamber_ids)
+        for _, chamber_id in ipairs(chamber_ids) do
+            chamber_buttons[chamber_id].background_color(0xFFFF00)
+        end
     end)
     State.update()
 
