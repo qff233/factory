@@ -94,7 +94,7 @@ function Config:get_recipe_input_counts(reicipe_name)
     local items = self.data.recipes[reicipe_name].inputs
     if items then
         for item_name, item_count in pairs(items) do
-            table.insert(item_counts, item_name .. " " .. tostring(item_count))
+            table.insert(item_counts, item_name .. "..." .. tostring(item_count))
         end
     end
     return item_counts
@@ -105,7 +105,7 @@ function Config:get_recipe_output_counts(reicipe_name)
     local items = self.data.recipes[reicipe_name].outputs
     if items then
         for item_name, item_count in pairs(items) do
-            table.insert(item_counts, item_name .. " " .. tostring(item_count))
+            table.insert(item_counts, item_name .. "..." .. tostring(item_count))
         end
     end
     return item_counts
@@ -116,7 +116,7 @@ function Config:get_recipe_inputbus_counts(reicipe_name)
     local items = self.data.recipes[reicipe_name].inputbus
     if items then
         for item_name, item_count in pairs(items) do
-            table.insert(item_counts, item_name .. " " .. tostring(item_count))
+            table.insert(item_counts, item_name .. "..." .. tostring(item_count))
         end
     end
     return item_counts
@@ -127,7 +127,7 @@ function Config:get_recipe_outputbus_counts(reicipe_name)
     local items = self.data.recipes[reicipe_name].outputbus
     if items then
         for item_name, item_count in pairs(items) do
-            table.insert(item_counts, item_name .. " " .. tostring(item_count))
+            table.insert(item_counts, item_name .. "..." .. tostring(item_count))
         end
     end
     return item_counts
