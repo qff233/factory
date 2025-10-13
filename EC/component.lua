@@ -171,7 +171,7 @@ function GT.getInputVoltage()
 end
 
 function GT.hasWork()
-    return true
+    return false
 end
 
 function GT.getEUInputAverage()
@@ -191,6 +191,7 @@ local Transposer = {}
 ---@field sourceTank number
 ---@return boolean, number
 function Transposer.transferFluid(sourceSide, sinkSide, count, sourceTank)
+    print("transferFluid", count)
     return true, count
 end
 
@@ -200,6 +201,7 @@ end
 ---@field sourceSlot number
 ---@return number
 function Transposer.transferItem(sourceSide, sinkSide, count, sourceSlot)
+    print("transferItem", count)
     return count
 end
 

@@ -45,7 +45,7 @@ local function chamber_config_panel(parent_widget, id)
             pannel:disable_child_event()
             WarnWindow.newUI(pannel, -14, 7, 68, 9, "必须选择一个流体")
         end
-    end, "Del")
+    end, "Del", 0xFFFFFF, 0xFF0000)
     pannel:add_child(del_button)
 
     local cancel_button = Button.new(35, 18, 4, 3, function()
@@ -64,7 +64,7 @@ local function chamber_config_panel(parent_widget, id)
             pannel:disable_child_event()
             WarnWindow.newUI(pannel, -14, 7, 68, 9, msg)
         end
-    end, "Ok", 0xFFFFFF, 0xFF0000)
+    end, "Ok")
     pannel:add_child(ok_button)
 
     parent_widget:add_child(pannel)

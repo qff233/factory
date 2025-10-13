@@ -1,5 +1,6 @@
 local Config = require("src.config")
 local component = require("component")
+local GT = component.gt_machine
 
 ---@class Task
 ---@field recipe_name string
@@ -18,17 +19,6 @@ local chamber_inputs = {}
 local tasks = {}
 ---@type Transposer[]
 local transposers = {}
-
-local is_running = true
-function ProcessControl.turnOn()
-    is_running = true
-end
-function ProcessControl.turnOff()
-    is_running = false
-end
-function ProcessControl.isRunning()
-    return is_running
-end
 
 local function deepcopy(orig)
     local orig_type = type(orig)
@@ -84,6 +74,7 @@ function ProcessControl.add_task(recipe_name, count)
             task.count_inputbus[item_name] = item_count * count
             task.remain_inputbus[item_name] = item_count * count
         end
+        table.insert(tasks, task)
     end
 end
 
@@ -92,7 +83,15 @@ end
 function ProcessControl.get_current_task()
     if #tasks > 0 then
         local task = tasks[1]
-        return task.recipe_name, task.remain_input, task.remain_inputbus
+        local remain_input_count = 0
+        local remain_inputbus_count = 0
+        for _, v in pairs(task.remain_input) do
+            remain_input_count = remain_input_count + v
+        end
+        for _, v in pairs(task.remain_inputbus) do
+            remain_inputbus_count = remain_inputbus_count + v
+        end
+        return task.recipe_name, remain_input_count, remain_inputbus_count
     end
     return nil
 end
@@ -147,40 +146,71 @@ local function find_match_item_in_container(transposer, item_name)
     return can_find, match_item_slot
 end
 
+---禁止OnlineRemote时手动本地下单
+---@type "Offline" | "OnlineLocal" | "OnlineRemote"
+local online_state = "Offline"
+function ProcessControl.set_offline()
+    online_state = "Offline"
+end
+function ProcessControl.set_online_local()
+    online_state = "OnlineLocal"
+end
+function ProcessControl.set_online_remote()
+    online_state = "OnlineRemote"
+end
+function ProcessControl.get_current_online_state()
+    return online_state
+end
+
+---@type "Idle" | "WaitingProcess" | "Processing" | "TransforDone" | "ProcessDone"
+local state = "Idle"
 ---@param callbeck fun(chamber_id)
 function ProcessControl.update(callbeck)
-    if not is_running then
+    if not GT.isWorkAllowed() then
         return
     end
 
-    --- TODO 添加机台状态  正在加工(记录当前程式，所有材料添加完后，禁止下一次加工，检测机台停止后切空闲)/空闲(开始下一次加工)
+    -- print(state)
+    if state == "Idle" then
+        if online_state == "OnlineRemote" then
+            --- TODO 从服务器获取订单  成功后把state切Processing
+        end
+        if #tasks > 0 then
+            state = "WaitingProcess"
+        end
+    elseif state == "ProcessDone" then
+        state = "Idle"
+    elseif state == "TransforDone" then
+        if not GT.hasWork() then
+            state = "ProcessDone"
+        end
+    elseif state == "WaitingProcess" or state == "Processing" then
+        if GT.hasWork() then
+            state = "Processing"
+        end
 
-    while #tasks > 0 do
         ---@type Task
         local current_task = tasks[1]
         local chamber_ids = {}
-        local has_trans = false
 
         -- Trans Fluid
         for item_name, count in pairs(current_task.remain_input) do
             local chamber_id = chamber_inputs[item_name]
-            table.insert(chamber_ids, chamber_id)
-
             local transposer = transposers[chamber_id]
+            table.insert(chamber_ids, chamber_id)
             local find_result, match_item_slot = find_match_item_in_container(transposer, item_name)
             if find_result then
                 local result, trans_to_input_count = transposer.transferFluid(0, 1, count, match_item_slot)
-                has_trans = result
 
                 local remain_count = count - trans_to_input_count
                 if remain_count == 0 then
-                    current_task.will_input[input_item_name] = nil
+                    current_task.remain_input[item_name] = nil
                 else
-                    current_task.will_input[input_item_name] = count - trans_to_input_count
+                    current_task.remain_input[item_name] = count - trans_to_input_count
                 end
             end
         end
-        callbeck(chamber_ids)
+        callbeck(chamber_ids) -- used for changing button background color
 
         -- Trans Item
         for item_name, count in pairs(current_task.remain_inputbus) do
@@ -193,24 +223,22 @@ function ProcessControl.update(callbeck)
                 end
                 local remain_count = count - trans_to_inputbus_count
                 if remain_count == 0 then
-                    current_task.will_inputbus[item_name] = nil
+                    current_task.remain_inputbus[item_name] = nil
                 else
-                    current_task.will_inputbus[item_name] = remain_count
+                    current_task.remain_inputbus[item_name] = remain_count
                 end
             end
         end
 
-        --- TODO 添加当前机台在线状态 OnlineRemote(远程下单) OnlineLocal(本地下单) Offline(不发送数据)
-        --- TODO 禁止OnlineRemote时手动本地下单
-        --- TODO 上传服务器当前Task状态
-        if not next(current_task.will_input) and not next(current_task.will_inputbus) then
+        print(next(current_task.remain_input), next(current_task.remain_inputbus))
+        if not next(current_task.remain_input) and not next(current_task.remain_inputbus) then
             table.remove(tasks, 1)
-            --- TODO 开启设备禁止工作，读取工作状态 得到真正加工完成的时间
+            state = "TransforDone"
         end
+    end
 
-        if not has_trans then
-            break
-        end
+    if online_state ~= "Offline" then
+        --- TODO 上传服务器当前Task  当前State
     end
 end
 
