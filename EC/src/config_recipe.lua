@@ -240,7 +240,8 @@ function Recipe.newUI(ec_panel)
 
     -- Input
     local recipe_input = Input.new(9, 21, 19, 3, function(input)
-        config:add_recipes(input.text)
+        local text = split(input.text)
+        config:add_recipes(text)
         recipe_list.items(config:get_recipe_names())
     end)
     recipe_panel:add_child(recipe_input)

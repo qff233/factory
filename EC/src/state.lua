@@ -34,6 +34,9 @@ status_panel:add_child(input_eu_label)
 local input_electric_label = Label.new(3, 8, 36, 1, "input_electric", 0xFFFFFF, 0x000000)
 status_panel:add_child(input_electric_label)
 
+local current_state_label = Label.new(3, 9, 36, 1, "current_state", 0xFFFFFF, 0x000000)
+status_panel:add_child(current_state_label)
+
 local task_count_label = Label.new(3, 11, 36, 1, "task_count", 0xFFFFFF, 0x000000)
 status_panel:add_child(task_count_label)
 
@@ -67,6 +70,7 @@ function State.update()
     if current_problem then
         if current_problem == 0 then
             current_porblem_label.text(" ")
+            current_porblem_label.background_color(0x000000)
         else
             current_porblem_label.text("请检修机器!!")
             current_porblem_label.background_color(0xFF0000)
@@ -80,6 +84,8 @@ function State.update()
 
     local input_electric = "平均电子输入：" .. tostring(GT.getAverageElectricInput())
     input_electric_label.text(input_electric)
+
+    current_state_label.text(ProcessControl.get_current_state())
 
     local task_count = task_count_label.text(ProcessControl.get_task_count())
     if task_count > 0 then

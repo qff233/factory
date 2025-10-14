@@ -230,16 +230,21 @@ function ProcessControl.update(callbeck)
             end
         end
 
-        print(next(current_task.remain_input), next(current_task.remain_inputbus))
         if not next(current_task.remain_input) and not next(current_task.remain_inputbus) then
-            table.remove(tasks, 1)
-            state = "TransforDone"
+            if state == "Processing" then
+                table.remove(tasks, 1)
+                state = "TransforDone"
+            end
         end
     end
 
     if online_state ~= "Offline" then
         --- TODO 上传服务器当前Task  当前State
     end
+end
+
+function ProcessControl.get_current_state()
+    return state
 end
 
 return ProcessControl
