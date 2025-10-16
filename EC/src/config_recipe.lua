@@ -15,7 +15,6 @@ local unicode = require("unicode")
 local Recipe = {}
 
 local function split(text)
-    local pattern = string.format("([^%s]+)", " ")
     if not text or text == "" then
         return "", ""
     end

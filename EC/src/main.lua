@@ -6,6 +6,7 @@ local CheckBox = require("ui.checkbox")
 local ProgressBar = require("ui.progressbar")
 local List = require("ui.list")
 
+local ConfigState = require("src.config_state")
 local ConfigRecipe = require("src.config_recipe")
 local ExecRecipe = require("src.exec_recipe")
 local State = require("src.state")
@@ -39,7 +40,9 @@ end
 
 local function state_button()
     local state_button = Button.new(56, 2, 15, 3, function()
-    end, "OnlineRemote", 0xFFFFFF, 0x00FF00)
+        ec_panel:disable_child_event()
+        ConfigState.newUI(ec_panel)
+    end, "OnlineRemote", 0x000000, 0x00FF00)
     return state_button
 end
 
@@ -111,5 +114,15 @@ function Update()
         power_button.background_color(0x00FF00)
     else
         power_button.background_color(0xFF0000)
+    end
+
+    local state = ProcessControl.get_current_online_state()
+    state_button.text(state)
+    if state == "OnlineRemote" then
+        state_button.background_color(0x00FF00)
+    elseif state == "OnlineLocal" then
+        state_button.background_color(0xFFFF00)
+    elseif state == "Offline" then
+        state_button.background_color(0xFF0000)
     end
 end

@@ -183,7 +183,7 @@ function Input:parse_event(event)
             self.cursor_pos = math.min(unicode.len(self.text) + 1, self.cursor_pos + 1)
         elseif code == 0x1C then -- 回车键
             self.on_submit(self)
-        else -- 字符
+        elseif char ~= 0 then -- 字符
             local input_char = unicode.char(char)
             local input_char_width = unicode.charWidth(char)
             if current_text_display_width + input_char_width <= max_display_width then
