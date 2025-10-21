@@ -3,6 +3,8 @@ use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, prelude::*};
 
 mod mes;
+mod server;
+mod wms;
 
 fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
     let file_appender = tracing_appender::rolling::daily("logs", "server");
