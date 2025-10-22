@@ -26,6 +26,7 @@ CREATE UNIQUE INDEX unique_active_recipe_per_tool_and_name
 ON mes.recipes(tool_name, recipe_name)
 WHERE status = 'active';
 
+-------------
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -39,8 +40,7 @@ CREATE TRIGGER update_recipes_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
-
-
+-------------
 CREATE OR REPLACE FUNCTION mes.prevent_direct_status_update()
 RETURNS TRIGGER AS $$
 BEGIN

@@ -2,6 +2,7 @@ CREATE TABLE mes.recipe_steps (
     steps_id SERIAL PRIMARY KEY,
     steps_name VARCHAR(100) NOT NULL,
     recipe_id INT NOT NULL,
+    quantity INT NOT NULL,
     step_number INT NOT NULL,
     step_description TEXT,
     created_by VARCHAR(50) NOT NULL,

@@ -1,0 +1,118 @@
+import {
+    Button,
+    LineEdit,
+    VerticalBox,
+    HorizontalBox,
+} from "std-widgets.slint";
+
+export component LoginWindow inherits Window {
+    width: 400px;
+    height: 500px;
+    title: "制造执行系统登录";
+    out property <string> username_input;
+    out property <string> password_input;
+    in property <bool> username-valid: true;
+    in property <bool> password-valid: true;
+    in property <string> error-message: "";
+    callback handle-exit;
+    callback handle-login;
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: 8px;
+        VerticalBox {
+            alignment: center;
+            spacing: 20px;
+            padding: 40px;
+            Text {
+                text: "制造执行系统";
+                color: #4361ee;
+                font-size: 28px;
+                font-weight: 700;
+            }
+
+            Text {
+                text: "登录你的账户";
+                color: #6c757d;
+                font-size: 14px;
+            }
+
+            VerticalBox {
+                spacing: 25px;
+                width: 100%;
+                VerticalBox {
+                    spacing: 5px;
+                    Text {
+                        text: "账户名";
+                        color: #2b2d42;
+                        font-size: 14px;
+                        font-weight: 500;
+                    }
+
+                    LineEdit {
+                        placeholder-text: "输入的账户名";
+                        text <=> root.username_input;
+                        height: 45px;
+                    }
+
+                    Text {
+                        text: "账户名是必须的！";
+                        color: #e63946;
+                        font-size: 12px;
+                        opacity: root.username-valid ? 0 : 1;
+                    }
+                }
+
+                VerticalBox {
+                    spacing: 5px;
+                    Text {
+                        text: "密码";
+                        color: #2b2d42;
+                        font-size: 14px;
+                        font-weight: 500;
+                    }
+
+                    LineEdit {
+                        placeholder-text: "输入你的密码";
+                        text <=> root.password_input;
+                        height: 45px;
+                        input-type: password;
+                    }
+
+                    Text {
+                        text: "密码是必须的！";
+                        color: #e63946;
+                        font-size: 12px;
+                        opacity: root.password-valid ? 0 : 1;
+                    }
+                }
+
+                Text {
+                    text: root.error-message;
+                    color: #e63946;
+                    font-size: 12px;
+                    opacity: root.error-message.is-empty ? 0 : 1;
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+                    Button {
+                        text: "Exit";
+                        height: 45px;
+                        clicked => {
+                            root.handle-exit();
+                        }
+                    }
+
+                    Button {
+                        text: "Login";
+                        height: 45px;
+                        clicked => {
+                            root.handle-login();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

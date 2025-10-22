@@ -1,5 +1,5 @@
 [package]
-name = "mes"
+name = "server"
 version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
@@ -20,3 +20,4 @@ tracing-subscriber = { workspace = true, features = [
 tracing-appender = { workspace = true }
 dotenvy = { workspace = true }
 chrono = { workspace = true }
+uuid = { workspace = true }

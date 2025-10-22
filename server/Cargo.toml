@@ -1,15 +1,14 @@
 [workspace]
-members = ["mes", "mcs"]
+members = ["mes", "mcs", "server"]
 
 resolver = "3"
 
 [workspace.package]
 edition = "2024"
-authors = [
-    "qff233"
-]
+authors = ["qff233"]
 
 [workspace.dependencies]
+axum = { version = "0.8" }
 jsonrpsee = { version = "0.26", features = ["server", "macros"] }
 tokio = { version = "1.47", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -21,6 +20,7 @@ tracing-subscriber = { version = "0.3", features = [
     "json",
     "local-time",
 ] }
+uuid = { version = "1.8", features = ["v4"] }
 tracing-appender = "0.2.3"
 dotenvy = "0.15"
 chrono = "0.4.42"
