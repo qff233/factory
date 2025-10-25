@@ -1,0 +1,77 @@
+import {
+    VerticalBox,
+    Button,
+    StandardButton,
+    HorizontalBox,
+    Palette,
+} from "std-widgets.slint";
+import { Recipe } from "recipe.slint";
+
+export global AccountInteraction {
+    in property <string> username;
+    in property <string> role;
+    in property <string> dialog_text;
+    callback logout();
+    callback check_logout();
+}
+
+export component Acctount inherits Rectangle {
+    dialog := Rectangle {
+        border-width: 2px;
+        border-color: Palette.border;
+        background: Palette.background;
+        visible: false;
+        z: 999;
+        width: parent.width / 2;
+        height: parent.height / 2;
+        VerticalBox {
+            padding: 15px;
+            Text {
+                font-size: 14px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                text <=> AccountInteraction.dialog_text;
+            }
+
+            StandardButton {
+                height: 45px;
+                kind: ok;
+                clicked => {
+                    dialog.visible = false;
+                    logout.enabled = true;
+                    AccountInteraction.check_logout();
+                }
+            }
+        }
+    }
+
+    VerticalBox {
+        Rectangle { }
+
+        VerticalBox {
+            Text {
+                horizontal-alignment: center;
+                font-size: 14px;
+                text: "当前用户：" + AccountInteraction.username;
+            }
+
+            Text {
+                horizontal-alignment: center;
+                font-size: 14px;
+                text: "当前权限：" + AccountInteraction.role;
+            }
+        }
+
+        Rectangle { }
+
+        logout := Button {
+            height: 45px;
+            text: "登出";
+            clicked => {
+                dialog.visible = true;
+                logout.enabled = false;
+                AccountInteraction.logout()
+            }
+        }
+    }
+}

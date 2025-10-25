@@ -1,0 +1,85 @@
+import {
+    StandardTableView,
+    Button,
+    LineEdit,
+    HorizontalBox,
+} from "std-widgets.slint";
+import { VerticalDivider } from "components/divider.slint";
+
+export global TaskInteraction {
+    callback get_tasks(tool: string, recipe_name: string, start_data: string, end_data: string);
+    callback add();
+}
+
+export component Task inherits Rectangle {
+    VerticalLayout {
+        HorizontalBox {
+            Text {
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: 14px;
+                text: "机器：";
+            }
+
+            LineEdit {
+                width: 8rem;
+            }
+
+            Text {
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: 14px;
+                text: "配方：";
+            }
+
+            LineEdit {
+                width: 10rem;
+            }
+
+            Text {
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: 14px;
+                text: "起始日期：";
+            }
+
+            LineEdit {
+                width: 15rem;
+            }
+
+            Text {
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: 14px;
+                text: "结束日期：";
+            }
+
+            LineEdit {
+                width: 15rem;
+            }
+
+            Rectangle { }
+
+            Button {
+                text: "查询";
+            }
+
+            VerticalDivider { }
+
+            Button {
+                text: "添加任务";
+            }
+        }
+
+        StandardTableView {
+            width: 100%;
+            columns: [
+                { title: "任务ID" },
+                { title: "机器" },
+                { title: "配方" },
+                { title: "开始时间" },
+                { title: "结束时间" },
+            ];
+        }
+    }
+}

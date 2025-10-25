@@ -1,7 +1,4 @@
-use axum::{
-    Router,
-    routing::{get, post},
-};
+use axum::{Router, routing::post};
 use sqlx::postgres::PgPoolOptions;
 use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::{fmt, prelude::*};
@@ -46,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("Failed to create pool");
     info!("Database pool created successfully");
 
-    let state = state::AppState::new(pool);
+    let state = state::AppState::new(pool).await;
 
     let public_routes = Router::new().route("/login", post(handlers::auth::login));
     let protected_routes = Router::new()

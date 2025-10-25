@@ -1,0 +1,105 @@
+import { VerticalDivider } from "components/divider.slint";
+import {
+    StandardTableView,
+    HorizontalBox,
+    Button,
+    LineEdit,
+} from "std-widgets.slint";
+
+export global RecipeInteraction {
+    callback get_recipes(tool_type: string, recipe_name: string) -> [[StandardListViewItem]];
+    callback sort_ascending(col_id: int);
+    callback sort_descending(col_id: int);
+    callback active(row_id: int);
+    callback inactive(row_id: int);
+    callback edit(row_id: int);
+    callback add();
+    callback del(row_id: int);
+}
+
+export component Recipe inherits Rectangle {
+    VerticalLayout {
+        HorizontalBox {
+            Text {
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: 14px;
+                text: "机器类型：";
+            }
+
+            tool_type_input := LineEdit {
+                width: 8rem;
+            }
+
+            Text {
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-size: 14px;
+                text: "配方：";
+            }
+
+            recipe_name_input := LineEdit { }
+
+            Rectangle { }
+
+            Button {
+                text: "筛选";
+                clicked => {
+                    table.rows = RecipeInteraction.get_recipes(tool_type_input.text, recipe_name_input.text)
+                }
+            }
+        }
+
+        table := StandardTableView {
+            width: 100%;
+            columns: [
+                { title:"机器类型"},         
+                { title:"配方"},     
+                { title:"版本"},     
+                { title:"状态"},     
+                { title:"创建者"},       
+                { title:"创建日期"},         
+                { title:"更新日期"},         
+            ];
+        }
+
+        HorizontalBox {
+            Button {
+                text: "启用";
+                clicked => {
+                    RecipeInteraction.active(table.current-row)
+                }
+            }
+
+            Button {
+                text: "禁用";
+                clicked => {
+                    RecipeInteraction.inactive(table.current-row)
+                }
+            }
+
+            VerticalDivider { }
+
+            Button {
+                text: "编辑";
+                clicked => {
+                    RecipeInteraction.edit(table.current-row)
+                }
+            }
+
+            Button {
+                text: "添加";
+                clicked => {
+                    RecipeInteraction.add()
+                }
+            }
+
+            Button {
+                text: "删除";
+                clicked => {
+                    RecipeInteraction.del(table.current-row)
+                }
+            }
+        }
+    }
+}

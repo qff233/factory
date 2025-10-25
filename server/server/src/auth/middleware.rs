@@ -4,6 +4,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
+use chrono::Local;
 
 use crate::{models::user::User, state::AppState};
 
@@ -16,11 +17,16 @@ pub async fn token_auth(
 
     let token = extract_token_from_headers(headers).ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let user_id = crate::auth::token::validate_token(&state.token_store, &token)
+    let user = crate::auth::token::validate_token(&state.token_store, &token)
         .await
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let user = User::from_id(&state.db_pool, user_id)
+    {
+        let mut update_timestamp = user.update_timestamp.write().await;
+        *update_timestamp = Local::now();
+    }
+
+    let user = User::from_id(&state.db_pool, user.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;

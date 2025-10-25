@@ -1,58 +1,50 @@
-import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
-export{ LoginWindow } from "./login.slint";
+import {
+    TabWidget,
+    HorizontalBox,
+} from "std-widgets.slint";
+import { VerticalDivider } from "components/divider.slint";
+import { State } from "state.slint";
+import { Task } from "task.slint";
+import { Recipe } from "recipe.slint";
+import { Acctount } from "account.slint";
+
+export{ LoginWindow } from "./login_window.slint";
+
+export { RecipeInteraction } from "./recipe.slint";
+export { AccountInteraction } from "./account.slint";
 
 export component AppWindow inherits Window {
     callback handle-logout();
-    width: 960px;
-    height: 540px;
+    min-width: 1024px;
+    min-height: 540px;
     title: "MES";
-    Rectangle {
-        width: parent.width;
-        height: parent.height;
-        background: #f5f5f5;
-        VerticalBox {
-            width: parent.width;
-            height: parent.height;
-            
-            Rectangle {
-                width: parent.width;
-                height: 60px;
-                background: #4361ee;
-                HorizontalBox {
-                    alignment: center;
-                    spacing: 10px;
-                    padding: 10px;
-                    Text {
-                        text: "制造执行系统";
-                        color: white;
-                        font-size: 20px;
-                        font-weight: 700;
-                    }
+    TabWidget {
+        Tab {
+            title: "状态";
+            State { }
+        }
 
-                    Button {
-                        text: "退出登录";
-                        clicked => {
-                            root.handle-logout();
-                        }
-                    }
-                }
-            }
-            
-            Rectangle {
-                width: parent.width;
-                height: parent.height - 60px;
-                background: white;
-                VerticalBox {
-                    alignment: center;
-                    padding: 40px;
-                    
-                    Text {
-                        text: "主界面内容...";
-                        color: #6c757d;
-                        font-size: 16px;
-                    }
-                }
-            }
+        Tab {
+            title: "任务";
+            Task { }
+        }
+
+        Tab {
+            title: "配方";
+            Recipe { }
+        }
+
+        Tab {
+            title: "步骤";
+        }
+
+        Tab {
+            title: "计划";
+        }
+
+        Tab {
+            title: "账户";
+            Acctount { }
         }
     }
 }

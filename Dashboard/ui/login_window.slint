@@ -9,8 +9,8 @@ export component LoginWindow inherits Window {
     width: 400px;
     height: 500px;
     title: "制造执行系统登录";
-    out property <string> username_input;
-    out property <string> password_input;
+    in-out property <string> username_input;
+    in-out property <string> password_input;
     in property <bool> username-valid: true;
     in property <bool> password-valid: true;
     in property <string> error-message: "";
