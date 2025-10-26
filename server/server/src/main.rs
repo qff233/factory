@@ -50,10 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/logout", post(handlers::auth::logout))
         .route("/recipe/get", post(handlers::recipe::get))
         .route("/recipe/update", post(handlers::recipe::update))
-        .route(
-            "/recipe/change_version",
-            post(handlers::recipe::change_version),
-        )
+        .route("/recipe/change_version", post(handlers::recipe::active))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::middleware::token_auth,

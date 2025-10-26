@@ -22,6 +22,70 @@ pub struct Recipe {
     updated_at: chrono::NaiveDateTime,
 }
 
+impl Recipe {
+    pub async fn update(
+        pool: &PgPool,
+        id: i32,
+        tool_type: Option<&str>,
+        name: Option<&str>,
+        version: Option<&str>,
+        inputs: Option<&Vec<String>>,
+        inputbuss: Option<&Vec<String>>,
+    ) -> Result<Self, sqlx::Error> {
+        let recipe = sqlx::query_as::<_, Recipe>(
+            r#"
+            WITH tt AS (
+                SELECT id, name 
+                FROM mes.tool_types
+                WHERE name = $2
+            )
+            UPDATE mes.recipes
+            SET 
+                tool_type = COALESCE((SELECT id FROM tt), tool_type),
+                name = COALESCE($3, name),
+                version = COALESCE($4, version),
+                inputs = COALESCE($5, inputs),
+                inputbuss = COALESCE($6, inputbuss)
+            WHERE id = $1
+            RETURNING
+                id,
+                (SELECT name FROM mes.tool_types WHERE id=tool_type) as tool_type,
+                name,
+                version,
+                status,
+                inputs,
+                inputbuss,
+                created_by,
+                created_at,
+                updated_at;
+            "#,
+        )
+        .bind(id)
+        .bind(tool_type)
+        .bind(name)
+        .bind(version)
+        .bind(inputs)
+        .bind(inputbuss)
+        .fetch_one(pool)
+        .await?;
+
+        Ok(recipe)
+    }
+
+    pub async fn active(pool: &PgPool, id: i32) -> Result<String, sqlx::Error> {
+        #[derive(FromRow)]
+        struct Row {
+            active_recipe: Option<String>,
+        }
+
+        let message = sqlx::query_as!(Row, "SELECT * FROM mes.active_recipe($1)", id)
+            .fetch_one(pool)
+            .await?;
+
+        Ok(message.active_recipe.unwrap_or("内部错误".to_string()))
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct Recipes(Vec<Recipe>);
 
@@ -89,5 +153,23 @@ mod tests {
             .await
             .unwrap();
         println!("{:#?}", recipes);
+    }
+
+    #[tokio::test]
+    async fn update() {
+        let pool = get_pool().await;
+        let new_recipe = Recipe::update(&pool, 1, None, None, Some("0.5"), None, None)
+            .await
+            .unwrap();
+        println!("{:#?}", new_recipe);
+    }
+
+    #[tokio::test]
+    async fn active() {
+        let pool = get_pool().await;
+        let message = Recipe::active(&pool, 1).await.unwrap();
+        println!("{}", message);
+        let message = Recipe::active(&pool, 8).await.unwrap_err();
+        println!("{}", message.as_database_error().unwrap().message());
     }
 }

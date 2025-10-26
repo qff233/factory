@@ -1,5 +1,5 @@
 CREATE OR REPLACE FUNCTION mes.switch_recipe_version(
-    p_tool_name VARCHAR(50),
+    p_tool_type INT,
     p_recipe_name VARCHAR(100),
     p_new_version VARCHAR(20)
 )
@@ -14,37 +14,37 @@ BEGIN
     PERFORM set_config('mes.bypass_trigger', 'true', false);
 BEGIN
 
-    SELECT recipe_id, recipe_version INTO v_old_recipe_id, v_old_version
+    SELECT id, version INTO v_old_recipe_id, v_old_version
     FROM mes.recipes
-    WHERE tool_name = p_tool_name
-        AND recipe_name = p_recipe_name
+    WHERE tool_type = p_tool_type
+        AND name = p_recipe_name
         AND status = 'active';
     -- IF v_old_recipe_id IS NULL THEN
     --     RAISE EXCEPTION '找不到当前active的配方: tool_name=%, recipe_name=%', 
     --         p_tool_name, p_recipe_name;
     -- END IF; 
     
-    SELECT recipe_id, recipe_version INTO v_new_recipe_id, v_new_version
+    SELECT id, version INTO v_new_recipe_id, v_new_version
     FROM mes.recipes
-    WHERE tool_name = p_tool_name
-        AND recipe_name = p_recipe_name
-        AND recipe_version = p_new_version;
+    WHERE tool_type = p_tool_type
+        AND name = p_recipe_name
+        AND version = p_new_version;
     IF v_new_recipe_id IS NULL THEN
-        RAISE EXCEPTION '找不到指定版本的配方: tool_name=%, recipe_name=%, version=%', 
-            p_tool_name, p_recipe_name, p_new_version;
+        RAISE EXCEPTION '找不到指定版本的配方: tool_type=%, recipe_name=%, version=%', 
+            (SELECT name FROM mes.tool_types WHERE id = p_tool_type), p_recipe_name, p_new_version;
     END IF;
 
     UPDATE mes.recipes
     SET status = 'inactive'
-    WHERE recipe_id = v_old_recipe_id;
+    WHERE id = v_old_recipe_id;
 
     UPDATE mes.recipes
     SET status = 'active'
-    WHERE recipe_id = v_new_recipe_id;
+    WHERE id = v_new_recipe_id;
 
     UPDATE mes.recipe_steps
-    SET recipe_id = v_new_recipe_id
-    WHERE recipe_id = v_old_recipe_id;
+    SET id = v_new_recipe_id
+    WHERE id = v_old_recipe_id;
 
     GET DIAGNOSTICS v_update_count = ROW_COUNT;
 
@@ -59,9 +59,10 @@ END;
 END;
 $$ LANGUAGE 'plpgsql';
 
+
 ----- TEST ------
 
-SELECT mes.switch_recipe_version('CR1', '水', '2.0');
-SELECT mes.switch_recipe_version('CR1', '水', '1.0');
+SELECT mes.switch_recipe_version(1, '水', '0.1'); 
+SELECT mes.switch_recipe_version(1, '水', '0.2');
 SELECT * FROM mes.recipes;
 SELECT * FROM mes.recipe_steps;

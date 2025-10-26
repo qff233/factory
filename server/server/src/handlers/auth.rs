@@ -3,7 +3,7 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
-use tracing::info;
+use tracing::error;
 
 use crate::{
     handlers::models::login::{LoginRequest, LoginResponse},
@@ -15,12 +15,12 @@ pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, StatusCode> {
-    info!("{}", payload.username);
-    info!("{}", payload.password);
-
     let user = User::from_username(&state.db_pool, &payload.username)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|e| {
+            error!("{:#?}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     if !user.verify_password(&payload.password) {

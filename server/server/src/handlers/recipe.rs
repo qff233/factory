@@ -1,18 +1,18 @@
 use crate::{
     auth::middleware::Auth,
     handlers::models::recipe::{
-        ChangeVersionRequest, ChangeVersionResponse, GetRequest, GetResponse, UpdateRequest,
-        UpdateResponse,
+        ActiveRequest, ActiveResponse, GetRequest, GetResponse, UpdateRequest, UpdateResponse,
     },
-    models::recipe::Recipes,
+    models::recipe::{Recipe, Recipes},
     state::AppState,
 };
 
 use axum::{Json, extract::State, http::StatusCode};
+use tracing::error;
 
 pub async fn get(
     State(state): State<AppState>,
-    Auth(_user): Auth,
+    Auth(user): Auth,
     Json(payload): Json<GetRequest>,
 ) -> Result<Json<GetResponse>, StatusCode> {
     let pool = &state.db_pool;
@@ -25,24 +25,50 @@ pub async fn get(
         payload.page_index,
     )
     .await
-    .map_err(|_e| StatusCode::INTERNAL_SERVER_ERROR)?;
+    .map_err(|e| {
+        error!("{}: {:#?}", user.username, e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     let response = GetResponse { data: recipes };
     Ok(Json(response))
 }
 
 pub async fn update(
-    State(_state): State<AppState>,
-    Auth(_user): Auth,
+    State(state): State<AppState>,
+    Auth(user): Auth,
     Json(payload): Json<UpdateRequest>,
 ) -> Result<Json<UpdateResponse>, StatusCode> {
-    todo!()
+    let data = Recipe::update(
+        &state.db_pool,
+        payload.id,
+        payload.tool_type.as_ref().map(|s| s.as_str()),
+        payload.name.as_ref().map(|s| s.as_str()),
+        payload.version.as_ref().map(|s| s.as_str()),
+        payload.inputs.as_ref(),
+        payload.inputbuss.as_ref(),
+    )
+    .await
+    .map_err(|e| {
+        error!("{}: {:#?}", user.username, e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(Json(UpdateResponse {
+        message: "更新成功！".to_string(),
+        data: Some(data),
+    }))
 }
 
-pub async fn change_version(
-    State(_state): State<AppState>,
-    Auth(_user): Auth,
-    Json(payload): Json<ChangeVersionRequest>,
-) -> Result<Json<ChangeVersionResponse>, StatusCode> {
-    todo!()
+pub async fn active(
+    State(state): State<AppState>,
+    Auth(user): Auth,
+    Json(payload): Json<ActiveRequest>,
+) -> Result<Json<ActiveResponse>, StatusCode> {
+    let message = Recipe::active(&state.db_pool, payload.id)
+        .await
+        .map_err(|e| {
+            error!("{}: {:#?}", user.username, e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(Json(ActiveResponse { message }))
 }

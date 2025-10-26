@@ -32,7 +32,7 @@ WHERE status = 'active';
 CREATE OR REPLACE FUNCTION mes.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
+    NEW.updated_at = TIMEZONE('Asia/Shanghai', NOW());
     RETURN NEW;
 END;
 $$ language 'plpgsql';

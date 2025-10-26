@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::recipe::{self, Recipes};
+use crate::models::recipe::{Recipe, Recipes};
 
 #[derive(Debug, Deserialize)]
 pub struct GetRequest {
@@ -17,26 +17,26 @@ pub struct GetResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateRequest {
-    id: i32,
-    tool_type: Option<String>,
-    name: Option<String>,
-    status: Option<recipe::Status>,
-    inputs: Option<Vec<String>>,
-    inputbuss: Option<Vec<String>>,
+    pub id: i32,
+    pub tool_type: Option<String>,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub inputs: Option<Vec<String>>,
+    pub inputbuss: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct UpdateResponse {
-    message: String,
+    pub message: String,
+    pub data: Option<Recipe>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ChangeVersionRequest {
-    id: i32,
-    version: String,
+pub struct ActiveRequest {
+    pub id: i32,
 }
 
 #[derive(Debug, Serialize)]
-pub struct ChangeVersionResponse {
-    message: String,
+pub struct ActiveResponse {
+    pub message: String,
 }
