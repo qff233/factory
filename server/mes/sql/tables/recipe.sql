@@ -1,7 +1,7 @@
 DROP TABLE mes.recipes;
 DROP TYPE mes.RECIPE_STATUS;
 
-CREATE TYPE mes.RECIPE_STATUS AS ENUM(
+CREATE TYPE mes.recipe_status AS ENUM(
     'active', 'inactive'
 );
 
@@ -11,13 +11,13 @@ CREATE TABLE mes.recipes(
     id SERIAL PRIMARY KEY,
     tool_type INT NOT NULL REFERENCES mes.tool_types(id),
     name VARCHAR(100) NOT NULL,
-    version VARCHAR(20) DEFAULT '1.0',
-    status mes.RECIPE_STATUS DEFAULT 'inactive',
+    version VARCHAR(20) DEFAULT '1.0' NOT NULL,
+    status mes.RECIPE_STATUS DEFAULT 'inactive' NOT NULL,
     inputs VARCHAR(50)[],
     inputbuss VARCHAR(50)[],
     created_by VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     UNIQUE (tool_type, name, version)
 );
 CREATE INDEX idx_recipes_tool_type ON mes.recipes(tool_type);

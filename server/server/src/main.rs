@@ -15,11 +15,11 @@ fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
     let file_layer = fmt::layer()
         .with_ansi(false)
         .with_writer(non_blocking)
-        .with_filter(LevelFilter::DEBUG);
+        .with_filter(LevelFilter::INFO);
     let stdout_layer = fmt::layer()
         .with_level(true)
         .with_writer(std::io::stdout)
-        .with_filter(LevelFilter::INFO);
+        .with_filter(LevelFilter::DEBUG);
 
     let collector = tracing_subscriber::registry()
         .with(file_layer)
@@ -48,6 +48,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let public_routes = Router::new().route("/login", post(handlers::auth::login));
     let protected_routes = Router::new()
         .route("/logout", post(handlers::auth::logout))
+        .route("/recipe/get", post(handlers::recipe::get))
+        .route("/recipe/update", post(handlers::recipe::update))
+        .route(
+            "/recipe/change_version",
+            post(handlers::recipe::change_version),
+        )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::middleware::token_auth,

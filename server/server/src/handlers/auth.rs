@@ -6,10 +6,8 @@ use axum::{
 use tracing::info;
 
 use crate::{
-    models::{
-        request::login::{LoginRequest, LoginResponse},
-        user::User,
-    },
+    handlers::models::login::{LoginRequest, LoginResponse},
+    models::user::User,
     state::AppState,
 };
 

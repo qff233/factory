@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Request, State},
+    extract::{FromRequestParts, Request, State},
     http::{HeaderMap, StatusCode},
     middleware::Next,
     response::Response,
@@ -44,5 +44,25 @@ pub fn extract_token_from_headers(headers: &HeaderMap) -> Option<String> {
         Some(auth_header[7..].to_string())
     } else {
         Some(auth_header.to_string())
+    }
+}
+
+pub struct Auth(pub User);
+
+impl<B> FromRequestParts<B> for Auth
+where
+    B: Send + Sync,
+{
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _state: &B,
+    ) -> Result<Self, Self::Rejection> {
+        let user = parts
+            .extensions
+            .get::<User>()
+            .ok_or(StatusCode::UNAUTHORIZED)?;
+        Ok(Auth(user.clone()))
     }
 }

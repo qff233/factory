@@ -1,5 +1,5 @@
 use serde::Serialize;
-use sqlx::prelude::FromRow;
+use sqlx::prelude::*;
 
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct User {
