@@ -1,5 +1,5 @@
 [workspace]
-members = ["mes", "mcs", "server"]
+members = ["ams", "mcs", "server"]
 
 resolver = "3"
 

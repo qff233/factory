@@ -62,44 +62,5 @@ export component Recipe inherits Rectangle {
                 { title:"更新日期"},         
             ];
         }
-
-        HorizontalBox {
-            Button {
-                text: "启用";
-                clicked => {
-                    RecipeInteraction.active(table.current-row)
-                }
-            }
-
-            Button {
-                text: "禁用";
-                clicked => {
-                    RecipeInteraction.inactive(table.current-row)
-                }
-            }
-
-            VerticalDivider { }
-
-            Button {
-                text: "编辑";
-                clicked => {
-                    RecipeInteraction.edit(table.current-row)
-                }
-            }
-
-            Button {
-                text: "添加";
-                clicked => {
-                    RecipeInteraction.add()
-                }
-            }
-
-            Button {
-                text: "删除";
-                clicked => {
-                    RecipeInteraction.del(table.current-row)
-                }
-            }
-        }
     }
 }
