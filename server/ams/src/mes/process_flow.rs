@@ -27,7 +27,6 @@ pub struct Step {
 
 #[derive(Debug, Serialize)]
 pub struct ProcessFlow {
-    pub name: String,
     pub steps: Vec<Step>,
 }
 
@@ -47,5 +46,6 @@ mod tests {
     #[tokio::test]
     async fn from_name() {}
 
+    #[tokio::test]
     async fn update() {}
 }
