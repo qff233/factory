@@ -26,7 +26,7 @@ pub async fn token_auth(
         *update_timestamp = Local::now();
     }
 
-    let user = User::from_id(&state.db_pool, user.user_id)
+    let user = User::fetch_from_id(&state.db_pool, user.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;

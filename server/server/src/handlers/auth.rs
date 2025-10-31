@@ -3,19 +3,28 @@ use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
 };
+use serde::{Deserialize, Serialize};
 use tracing::error;
 
-use crate::{
-    handlers::models::login::{LoginRequest, LoginResponse},
-    models::user::User,
-    state::AppState,
-};
+use crate::{models::user::User, state::AppState};
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+    pub user: User,
+}
 
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, StatusCode> {
-    let user = User::from_username(&state.db_pool, &payload.username)
+    let user = User::fetch_from_username(&state.db_pool, &payload.username)
         .await
         .map_err(|e| {
             error!("{:#?}", e);

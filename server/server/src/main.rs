@@ -48,9 +48,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let public_routes = Router::new().route("/login", post(handlers::auth::login));
     let protected_routes = Router::new()
         .route("/logout", post(handlers::auth::logout))
-        .route("/recipe/get", post(handlers::recipe::get))
-        .route("/recipe/update", post(handlers::recipe::update))
-        .route("/recipe/change_version", post(handlers::recipe::active))
+        .route(
+            "/process_flows/get_names",
+            post(handlers::process_flow::get_names),
+        )
+        .route("/process_flows/get", post(handlers::process_flow::get))
+        // .route("/recipe/get", post(handlers::recipe::get))
+        // .route("/recipe/update", post(handlers::recipe::update))
+        // .route("/recipe/change_version", post(handlers::recipe::active))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth::middleware::token_auth,
